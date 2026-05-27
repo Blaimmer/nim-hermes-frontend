@@ -453,22 +453,28 @@ export default function App() {
   useEffect(() => {
     const fetchSystemStats = async () => {
       try {
+        const startTime = performance.now();
         const res = await fetch('/api/system-info');
-        if (!res.ok) return;
+        const latency = Math.round(performance.now() - startTime);
+        if (!res.ok) {
+          setStats(prev => ({ ...prev, networkStatus: 'DEGRADED' }));
+          return;
+        }
         const data = await res.json();
         
         const totalGB = parseFloat(data.totalMemory);
         const freeGB = parseFloat(data.freeMemory);
-        const usedGB = (totalGB - freeGB).toFixed(2);
+        const usedGB = (totalGB - freeGB).toFixed(1);
 
         setStats({
-          latency: Math.floor(Math.random() * 6) + 9, // Local response latency
+          latency,  // REAL — tiempo del request
           cpu: data.cpuUsage,
           memory: `${usedGB} / ${data.totalMemory}`,
-          networkStatus: 'NOMINAL'
+          networkStatus: res.ok ? 'NOMINAL' : 'DEGRADED'
         });
       } catch (err) {
         console.warn('System telemetry fetch failed:', err);
+        setStats(prev => ({ ...prev, networkStatus: 'DISCONNECTED' }));
       }
     };
 
@@ -2236,9 +2242,16 @@ export default function App() {
 
               <div className="flex flex-col">
                 <span className="text-[8px] text-cyan-500/60 uppercase">Estado Red</span>
-                <span className="text-green-400 text-[10px] font-bold uppercase flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                  NOMINAL SECURE
+                <span className={`text-[10px] font-bold uppercase flex items-center gap-1.5 ${
+                  stats.networkStatus === 'NOMINAL' ? 'text-green-400' : 
+                  stats.networkStatus === 'DEGRADED' ? 'text-amber-400' : 'text-red-400'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    stats.networkStatus === 'NOMINAL' ? 'bg-green-500 animate-pulse' : 
+                    stats.networkStatus === 'DEGRADED' ? 'bg-amber-500' : 'bg-red-500'
+                  }`}></span>
+                  {stats.networkStatus === 'NOMINAL' ? 'NOMINAL' : 
+                   stats.networkStatus === 'DEGRADED' ? 'DEGRADADA' : 'SIN CONEXIÓN'}
                 </span>
               </div>
 
