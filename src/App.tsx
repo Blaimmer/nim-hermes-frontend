@@ -238,8 +238,8 @@ export default function App() {
       setSoulPersona(d.personaBlock || '');
       setSoulTask(d.taskBlock || '');
     }).catch(() => {});
-    fetch('/api/hermes/mcp-status').then(r => r.json()).then(d => {
-      setMcpServers(d.servers || []);
+    fetch('/api/hermes/integrations').then(r => r.json()).then(d => {
+      setMcpServers(d.integrations || []);
     }).catch(() => {});
   }, []);
 
@@ -2160,38 +2160,31 @@ export default function App() {
                   />
                 </div>
 
-                {/* MCP CONNECTIONS */}
+                {/* INTEGRACIONES CONECTADAS */}
                 <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded">
                   <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-cyan-950/30">
                     <Server className="w-3 h-3 text-cyan-400" />
                     <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
-                      MCP CONNECTIONS — Servidores conectados
+                      INTEGRACIONES — {mcpServers.filter((s: any) => s.connected).length}/{mcpServers.length} activas
                     </span>
-                    <span className="ml-auto text-[8px] text-cyan-600 font-mono">{mcpServers.length} activos</span>
                   </div>
                   {mcpServers.length === 0 ? (
                     <div className="text-[9px] text-cyan-600/60 italic text-center py-3 font-mono">
-                      No hay servidores MCP registrados.
+                      Escaneando integraciones...
                     </div>
                   ) : (
-                    <div className="space-y-1">
-                      {mcpServers.map((srv, idx) => (
-                        <div key={idx} className="bg-[#010912] p-1.5 rounded border border-cyan-950/50 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`w-2 h-2 rounded-full ${
-                              srv.status === 'connected' ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-gray-600'
-                            }`} />
-                            <div>
-                              <span className="text-cyan-200 font-bold text-[9px] block font-mono">{srv.name || srv.id}</span>
-                              {srv.transport && <span className="text-cyan-600 text-[7px] block font-mono">Transporte: {srv.transport}</span>}
+                    <div className="space-y-1 max-h-[200px] overflow-y-auto custom-scrollbar">
+                      {mcpServers.map((srv: any, idx: number) => (
+                        <div key={idx} className={`bg-[#010912] p-1.5 rounded border flex items-center justify-between ${srv.connected ? 'border-cyan-950/50' : 'border-cyan-950/20 opacity-60'}`}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${srv.connected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-gray-600'}`} />
+                            <div className="min-w-0">
+                              <span className="text-cyan-200 font-bold text-[9px] block font-mono truncate">{srv.name}</span>
+                              <span className="text-cyan-600 text-[7px] block font-mono truncate">{srv.detail || srv.type}</span>
                             </div>
                           </div>
-                          <span className={`px-1.5 py-0.5 rounded text-[7px] font-bold uppercase font-mono border ${
-                            srv.status === 'connected'
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                              : 'bg-gray-500/10 text-gray-400 border-gray-500/30'
-                          }`}>
-                            {srv.status === 'connected' ? 'CONECTADO' : 'DESCONECTADO'}
+                          <span className={`px-1.5 py-0.5 rounded text-[7px] font-bold uppercase font-mono border flex-shrink-0 ml-1 ${srv.connected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-gray-500/10 text-gray-400 border-gray-500/30'}`}>
+                            {srv.connected ? 'ON' : 'OFF'}
                           </span>
                         </div>
                       ))}

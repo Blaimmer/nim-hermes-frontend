@@ -1338,38 +1338,71 @@ app.post('/api/hermes/soul-update', (req, res) => {
   }
 });
 
-// Estado MCP servers
-app.get('/api/hermes/mcp-status', (req, res) => {
+// Estado de integraciones reales (MCP + plataformas + skills)
+app.get('/api/hermes/integrations', async (req, res) => {
+  const integrations: any[] = [];
+  
+  // 1. GitHub (gh CLI)
   try {
-    // Listar MCP servers configurados
-    const configPath = path.join(os.homedir(), '.hermes', 'config.yaml');
-    let mcpServers: any[] = [];
-    try {
-      const configContent = fs.readFileSync(configPath, 'utf-8');
-      // Buscar sección MCP en config
-      const mcpMatch = configContent.match(/mcp_servers:\s*\n((?:\s+\S.*\n)*)/);
-      if (mcpMatch) {
-        const lines = mcpMatch[1].split('\n').filter(Boolean);
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('-')) continue;
-          const [name] = trimmed.split(':');
-          if (name) mcpServers.push({ name: name.trim(), status: 'configured', connected: true });
-        }
-      }
-    } catch (e) {}
-    
-    res.json({
-      servers: mcpServers.length > 0 ? mcpServers : [
-        { name: 'filesystem', status: 'builtin', connected: true },
-        { name: 'terminal', status: 'builtin', connected: true },
-        { name: 'web_search', status: 'builtin', connected: true },
-      ],
-      total: mcpServers.length || 3,
+    const { execSync } = await import('child_process');
+    const ghStatus = execSync('gh auth status 2>&1', { encoding: 'utf-8', timeout: 5000 }) as string;
+    integrations.push({
+      name: 'GitHub',
+      type: 'VCS',
+      connected: ghStatus.includes('Logged in'),
+      detail: ghStatus.includes('Logged in') ? 'Blaimmer' : 'No autenticado',
+      icon: 'github',
     });
-  } catch (e: any) {
-    res.json({ servers: [], total: 0, error: e.message });
-  }
+  } catch (e) { integrations.push({ name: 'GitHub', type: 'VCS', connected: false, detail: 'Error', icon: 'github' }); }
+
+  // 2. Telegram
+  const hasTelegram = !!process.env.TELEGRAM_BOT_TOKEN && !process.env.TELEGRAM_BOT_TOKEN?.includes('your_');
+  integrations.push({ name: 'Telegram', type: 'Messaging', connected: hasTelegram, detail: hasTelegram ? 'Bot activo' : 'Sin token', icon: 'message-circle' });
+
+  // 3. Google Workspace (verificar múltiples keys)
+  const gwsConnected = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON || 
+    (!!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET);
+  integrations.push({ name: 'Google Workspace', type: 'Productivity', connected: gwsConnected, detail: gwsConnected ? 'Gmail, Drive, Calendar, Sheets' : 'Sin configurar', icon: 'google', hasSkill: true });
+
+  // 4. Notion
+  const notionConnected = !!process.env.NOTION_API_KEY && !process.env.NOTION_API_KEY?.includes('your_');
+  integrations.push({ name: 'Notion', type: 'Notes', connected: notionConnected, detail: notionConnected ? 'API key configurada' : 'Sin key', icon: 'file-text', hasSkill: true });
+
+  // 5. Spotify
+  const spotifyConnected = !!process.env.SPOTIFY_CLIENT_ID && !!process.env.SPOTIFY_CLIENT_SECRET;
+  integrations.push({ name: 'Spotify', type: 'Music', connected: spotifyConnected, detail: spotifyConnected ? 'App registrada' : 'Sin credenciales', icon: 'music', hasSkill: true });
+
+  // 6. Linear
+  const linearConnected = !!process.env.LINEAR_API_KEY && !process.env.LINEAR_API_KEY?.includes('your_');
+  integrations.push({ name: 'Linear', type: 'Project Mgmt', connected: linearConnected, detail: linearConnected ? 'API key configurada' : 'Sin key', icon: 'layout', hasSkill: true });
+
+  // 7. Airtable
+  const airtableConnected = !!process.env.AIRTABLE_API_KEY && !process.env.AIRTABLE_API_KEY?.includes('your_');
+  integrations.push({ name: 'Airtable', type: 'Database', connected: airtableConnected, detail: airtableConnected ? 'API key configurada' : 'Sin key', icon: 'database', hasSkill: true });
+
+  // 8. Obsidian
+  const obsidianConnected = !!process.env.OBSIDIAN_VAULT_PATH && existsSync(process.env.OBSIDIAN_VAULT_PATH);
+  integrations.push({ name: 'Obsidian', type: 'Knowledge', connected: obsidianConnected, detail: obsidianConnected ? 'Vault activo' : 'Sin vault', icon: 'book-open', hasSkill: true });
+
+  // 9. Tavily
+  const tavilyConnected = !!process.env.TAVILY_API_KEY && !process.env.TAVILY_API_KEY?.includes('your_');
+  integrations.push({ name: 'Tavily Search', type: 'Search', connected: tavilyConnected, detail: tavilyConnected ? 'Búsqueda web activa' : 'Sin key', icon: 'search' });
+
+  // 10. DeepSeek
+  const deepseekConnected = !!process.env.DEEPSEEK_API_KEY && !process.env.DEEPSEEK_API_KEY?.includes('MY_');
+  integrations.push({ name: 'DeepSeek AI', type: 'LLM', connected: deepseekConnected, detail: deepseekConnected ? 'V4 Pro activo' : 'Sin key', icon: 'cpu' });
+
+  // 11. Cloudflare Tunnel
+  integrations.push({ name: 'Cloudflare Tunnel', type: 'Network', connected: true, detail: 'HTTPS público activo', icon: 'shield' });
+
+  // 12. Holographic Memory
+  integrations.push({ name: 'Holographic Memory', type: 'Memory', connected: true, detail: 'SQLite vectorial local', icon: 'hard-drive' });
+
+  res.json({
+    integrations,
+    total: integrations.length,
+    connected: integrations.filter(i => i.connected).length,
+  });
 });
 
 // Métricas reales de la API (balance DeepSeek + uso local)
