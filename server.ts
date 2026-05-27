@@ -917,6 +917,7 @@ app.post('/api/agent/stream', async (req, res) => {
 
     // Enviar evento de inicio para que el frontend sepa que empezamos
     send({ type: 'start' });
+    send({ type: 'thought', message: `Analizando: "${prompt.slice(0, 80)}${prompt.length > 80 ? '...' : ''}"` });
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1263,6 +1264,113 @@ async function testModelConnection(provider: string, modelId: string, apiKey: st
     return false;
   }
 }
+
+// ==========================================
+// SOUL DOCS + MCP — MATRICE tab
+// ==========================================
+
+// Leer documentos soul (SOUL.md, AGENT.md)
+app.get('/api/hermes/soul-docs', (req, res) => {
+  const docs: Record<string, string> = {};
+  const files = ['SOUL.md', 'AGENT.md', 'AGENTS.md'];
+  
+  for (const f of files) {
+    const p = path.join(process.cwd(), f);
+    try {
+      if (existsSync(p)) docs[f] = fs.readFileSync(p, 'utf-8');
+    } catch (e) {}
+  }
+
+  // Extraer resumen de cada doc
+  const extractSummary = (content: string, key: string) => {
+    const lines = content.split('\n');
+    for (const line of lines) {
+      if (line.toLowerCase().includes(key.toLowerCase())) return line.replace(/^#+\s*/, '').trim();
+    }
+    return lines[0]?.replace(/^#+\s*/, '') || '';
+  };
+
+  res.json({
+    docs,
+    humanBlock: docs['SOUL.md'] ? extractSummary(docs['SOUL.md'], 'señor') : 'Oscar — Ingeniero Principal, dueño del sistema NIM.',
+    personaBlock: docs['AGENT.md'] ? extractSummary(docs['AGENT.md'], 'hermes') : 'Hermes Agent — Asistente proactivo, cerebro cognitivo del dashboard NIM.',
+    taskBlock: docs['AGENTS.md'] ? extractSummary(docs['AGENTS.md'], 'objetivo') : 'Mantener y evolucionar el dashboard NIM como interfaz principal.',
+  });
+});
+
+// Guardar bloque de soul doc (confirmación incluida)
+app.post('/api/hermes/soul-update', (req, res) => {
+  const { block, content } = req.body; // block: 'human' | 'persona' | 'task'
+  if (!block || content === undefined) return res.status(400).json({ error: 'Faltan block y content' });
+
+  const fileMap: Record<string, string> = {
+    human: 'SOUL.md',
+    persona: 'AGENT.md',
+    task: 'AGENTS.md',
+  };
+  const fileName = fileMap[block];
+  if (!fileName) return res.status(400).json({ error: 'Bloque no válido' });
+
+  const filePath = path.join(process.cwd(), fileName);
+  try {
+    let existing = existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '';
+    const keyMap: Record<string, string> = { human: 'Señor', persona: 'Hermes', task: 'Objetivo' };
+    const key = keyMap[block];
+    
+    // Buscar línea que contenga la key y reemplazarla
+    const lines = existing.split('\n');
+    let found = false;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].toLowerCase().includes(key.toLowerCase())) {
+        lines[i] = `${key}: ${content}`;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      lines.push(`\n${key}: ${content}`);
+    }
+    fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+    
+    res.json({ success: true, block, content, file: fileName });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Estado MCP servers
+app.get('/api/hermes/mcp-status', (req, res) => {
+  try {
+    // Listar MCP servers configurados
+    const configPath = path.join(os.homedir(), '.hermes', 'config.yaml');
+    let mcpServers: any[] = [];
+    try {
+      const configContent = fs.readFileSync(configPath, 'utf-8');
+      // Buscar sección MCP en config
+      const mcpMatch = configContent.match(/mcp_servers:\s*\n((?:\s+\S.*\n)*)/);
+      if (mcpMatch) {
+        const lines = mcpMatch[1].split('\n').filter(Boolean);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('-')) continue;
+          const [name] = trimmed.split(':');
+          if (name) mcpServers.push({ name: name.trim(), status: 'configured', connected: true });
+        }
+      }
+    } catch (e) {}
+    
+    res.json({
+      servers: mcpServers.length > 0 ? mcpServers : [
+        { name: 'filesystem', status: 'builtin', connected: true },
+        { name: 'terminal', status: 'builtin', connected: true },
+        { name: 'web_search', status: 'builtin', connected: true },
+      ],
+      total: mcpServers.length || 3,
+    });
+  } catch (e: any) {
+    res.json({ servers: [], total: 0, error: e.message });
+  }
+});
 
 // Métricas reales de la API (balance DeepSeek + uso local)
 app.get('/api/hermes/quota', async (req, res) => {

@@ -125,6 +125,13 @@ export default function App() {
   const [wmTask, setWmTask] = useState('');
   const [wmUpdating, setWmUpdating] = useState(false);
 
+  // MATRICE: Soul docs editor + MCP status
+  const [soulHuman, setSoulHuman] = useState('');
+  const [soulPersona, setSoulPersona] = useState('');
+  const [soulTask, setSoulTask] = useState('');
+  const [soulSaving, setSoulSaving] = useState<string | null>(null);
+  const [mcpServers, setMcpServers] = useState<any[]>([]);
+
   const [evolveSkillId, setEvolveSkillId] = useState('data_compiler');
   const [evolveSkillName, setEvolveSkillName] = useState('Compilador de Datos');
   const [evolveSkillDesc, setEvolveSkillDesc] = useState('Análisis sintáctico y estructuración de archivos.');
@@ -220,6 +227,18 @@ export default function App() {
 
   useEffect(() => {
     fetchCoreStatus();
+  }, []);
+
+  // Cargar datos para MATRICE (Soul docs + MCP status)
+  useEffect(() => {
+    fetch('/api/hermes/soul-docs').then(r => r.json()).then(d => {
+      setSoulHuman(d.humanBlock || '');
+      setSoulPersona(d.personaBlock || '');
+      setSoulTask(d.taskBlock || '');
+    }).catch(() => {});
+    fetch('/api/hermes/mcp-status').then(r => r.json()).then(d => {
+      setMcpServers(d.servers || []);
+    }).catch(() => {});
   }, []);
 
   // Speak next onboarding question aloud whenever it changes or loads
@@ -817,16 +836,21 @@ export default function App() {
               ));
               // Hablar frases completas que se hayan formado
               speakNewPhrases();
+            } else if (event.type === 'thought') {
+              addLog('thought', event.message);
+            } else if (event.type === 'start') {
+              addLog('system', 'Iniciando procesamiento...');
             } else if (event.type === 'done') {
               accumulatedContent = event.response || accumulatedContent;
               setChatMessages(prev => prev.map(m =>
                 m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
               ));
-              addLog('response', `HERMES: "${accumulatedContent.slice(0, 100)}..."`);
+              addLog('response', 'Tarea completada');
               // Forzar a hablar todo lo que falta
               speakNewPhrases(true);
               return;
             } else if (event.type === 'error') {
+              addLog('system', 'ERROR: ' + event.message);
               throw new Error(event.message);
             }
           } catch (parseErr: any) {
@@ -2007,786 +2031,155 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB CONTENT 3: AGENTIC CORE MIDDLEWARE AND HYBRID MEMORY COCKPIT */}
+            {/* TAB CONTENT 3: MATRICE — EDITOR DE SOUL DOCS + MCP STATUS */}
             {activeTab === 'agentic_core' && (
-              <div className="h-[300px] overflow-y-auto pr-1 space-y-3.5 custom-scrollbar text-xs">
+              <div className="h-[300px] overflow-y-auto pr-1 space-y-3 custom-scrollbar text-xs">
                 
-                {/* 1. Working Memory Buffer Cards (Human, Persona, Task Blocks) */}
+                {/* HUMAN BLOCK */}
                 <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded">
                   <div className="flex justify-between items-center mb-1 pb-1 border-b border-cyan-950/30">
-                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">BÚFER MEMORIA TRABAJO (LETTA)</span>
+                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
+                      HUMAN BLOCK — Cómo Hermes se refiere al Señor
+                    </span>
                     <button
-                      onClick={async () => {
-                        setWmUpdating(true);
-                        try {
-                          const r = await fetch('/api/agent-core/working-memory', {
+                      onClick={() => {
+                        if (window.confirm('¿Confirmas cambiar cómo Hermes se refiere a ti?')) {
+                          setSoulSaving('human');
+                          fetch('/api/hermes/soul-update', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ humanBlock: wmHuman, personaBlock: wmPersona, taskBlock: wmTask })
-                          });
-                          if (r.ok) {
-                            await fetchCoreStatus();
-                          }
-                        } catch (err) {
-                          console.error(err);
-                        } finally {
-                          setWmUpdating(false);
+                            body: JSON.stringify({ block: 'human', content: soulHuman })
+                          }).then(r => {
+                            if (!r.ok) throw new Error('Error al guardar');
+                          }).catch(err => {
+                            console.error(err);
+                          }).finally(() => setSoulSaving(null));
                         }
                       }}
-                      className="text-[8px] bg-cyan-500/10 text-cyan-200 border border-cyan-700/50 hover:bg-cyan-500/20 px-2 py-0.5 rounded uppercase font-mono font-bold"
-                      disabled={wmUpdating}
+                      disabled={soulSaving === 'human'}
+                      className="text-[8px] bg-cyan-500/10 text-cyan-200 border border-cyan-700/50 hover:bg-cyan-500/20 px-2 py-0.5 rounded uppercase font-mono font-bold disabled:opacity-50"
                     >
-                      {wmUpdating ? 'SINCRONIZANDO...' : 'GUARDAR BLOQUES'}
+                      {soulSaving === 'human' ? 'GUARDANDO...' : 'GUARDAR'}
                     </button>
                   </div>
-
-                  <div className="space-y-1.5 mt-2">
-                    <div>
-                      <label className="text-[8px] text-cyan-600 block uppercase font-mono mb-0.5">HUMAN BLOCK (Preferencias del Señor)</label>
-                      <textarea
-                        value={wmHuman}
-                        onChange={(e) => setWmHuman(e.target.value)}
-                        className="w-full text-[10px] p-1 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none"
-                        rows={2}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[8px] text-cyan-600 block uppercase font-mono mb-0.5">PERSONA BLOCK (Directrices NIM)</label>
-                      <textarea
-                        value={wmPersona}
-                        onChange={(e) => setWmPersona(e.target.value)}
-                        className="w-full text-[10px] p-1 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none"
-                        rows={2}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[8px] text-cyan-600 block uppercase font-mono mb-0.5">TASK BLOCK (Meta Activa del Motor)</label>
-                      <textarea
-                        value={wmTask}
-                        onChange={(e) => setWmTask(e.target.value)}
-                        className="w-full text-[10px] p-1 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none"
-                        rows={2}
-                      />
-                    </div>
-                  </div>
+                  <textarea
+                    value={soulHuman}
+                    onChange={(e) => setSoulHuman(e.target.value)}
+                    className="w-full text-[10px] p-1.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none resize-none"
+                    rows={3}
+                    placeholder="Describe quién eres para Hermes..."
+                  />
                 </div>
 
-                {/* 2. Sleeptime Consolidation Panel */}
+                {/* PERSONA BLOCK */}
                 <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">CONSOLIDADOR HÍBRIDO</span>
-                    <button
-                      onClick={async () => {
-                        setSleeptimeLoading(true);
-                        try {
-                          const r = await fetch('/api/agent-core/consolidation', { method: 'POST' });
-                          if (r.ok) {
-                            const resData = await r.json();
-                            await fetchCoreStatus();
-                          }
-                        } catch (err) {
-                          console.error(err);
-                        } finally {
-                          setSleeptimeLoading(false);
-                        }
-                      }}
-                      className="text-[8px] bg-purple-500/10 text-purple-200 border border-purple-700/50 hover:bg-purple-500/20 px-2 py-0.5 rounded uppercase font-mono font-bold flex items-center gap-1 cursor-pointer"
-                      disabled={sleeptimeLoading}
-                    >
-                      <Sparkles className="w-2.5 h-2.5 text-purple-400" />
-                      {sleeptimeLoading ? 'CONSOLIDANDO...' : 'SLEEPTIME'}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5 mt-2 bg-[#010912]/50 p-1.5 rounded text-center">
-                    <div>
-                      <div className="text-[12px] text-[#00f2ff] font-bold font-mono">{coreStatus?.ltmSize || 0}</div>
-                      <div className="text-[7.5px] uppercase text-cyan-600 font-mono">MEMORIAS</div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-purple-400 font-bold font-mono">{coreStatus?.graphNodesCount || 0}</div>
-                      <div className="text-[7.5px] uppercase text-cyan-600 font-mono font-bold">NÚCLEOS</div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-emerald-400 font-bold font-mono">{coreStatus?.graphEdgesCount || 0}</div>
-                      <div className="text-[7.5px] uppercase text-cyan-600 font-mono">ENLACES</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Auto-Evolución de Skills (Self-Programming Node) */}
-                <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded space-y-1.5">
                   <div className="flex justify-between items-center mb-1 pb-1 border-b border-cyan-950/30">
-                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono font-bold">NIM AUTO-EVOLUCIÓN (AUTO-SKILLS)</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div>
-                      <label className="text-[7.5px] text-cyan-600 block uppercase font-mono">ID MODULAR</label>
-                      <input
-                        value={evolveSkillId}
-                        onChange={(e) => setEvolveSkillId(e.target.value)}
-                        className="w-full text-[10px] p-0.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded font-mono focus:outline-none"
-                        placeholder="data_indexer"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[7.5px] text-cyan-600 block uppercase font-mono">ETIQUETA SKILL</label>
-                      <input
-                        value={evolveSkillName}
-                        onChange={(e) => setEvolveSkillName(e.target.value)}
-                        className="w-full text-[10px] p-0.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded font-mono focus:outline-none"
-                        placeholder="Indexador de Red"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[7.5px] text-cyan-600 block uppercase font-mono">DESCRIPCIÓN DE CAPACIDADES</label>
-                    <textarea
-                      value={evolveSkillDesc}
-                      onChange={(e) => setEvolveSkillDesc(e.target.value)}
-                      className="w-full text-[10px] p-1 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:outline-none"
-                      rows={1.5}
-                      placeholder="Estadísticas de disco y red..."
-                    />
-                  </div>
-
-                  <button
-                    onClick={async () => {
-                      setEvolveLoading(true);
-                      try {
-                        const r = await fetch('/api/agent-core/skills/evolve', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ id: evolveSkillId, name: evolveSkillName, description: evolveSkillDesc })
-                        });
-                        if (r.ok) {
-                          await fetchCoreStatus();
-                          
-                          // Map output visually to the list of general skills
-                          setSkills(prev => [
-                            ...prev,
-                            { id: evolveSkillId, name: evolveSkillName.toUpperCase(), status: 'Activa', isEnabled: true, description: evolveSkillDesc, callCount: 1 }
-                          ]);
-                        }
-                      } catch (err) {
-                        console.error(err);
-                      } finally {
-                        setEvolveLoading(false);
-                      }
-                    }}
-                    className="w-full font-bold text-[8.5px] text-center bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 border border-emerald-700/50 py-1 rounded uppercase font-mono cursor-pointer"
-                    disabled={evolveLoading}
-                  >
-                    {evolveLoading ? 'DISEÑANDO Y COMPILANDO...' : 'SINTETIZAR NUEVA HABILIDAD'}
-                  </button>
-                </div>
-
-                {/* 4. Terminal de Comando Segura */}
-                <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded space-y-1.5">
-                  <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono flex items-center gap-1">
-                    <Terminal className="w-2.5 h-2.5 text-cyan-500" />
-                    CONSOLA INTEGRADA (SYSTEM DEPS)
-                  </span>
-                  <div className="flex gap-1.5">
-                    <input
-                      value={consoleCommand}
-                      onChange={(e) => setConsoleCommand(e.target.value)}
-                      className="flex-1 text-[10px] p-1 bg-[#010912] border border-cyan-950 text-cyan-100 rounded font-mono focus:outline-none"
-                      placeholder="npm run lint"
-                    />
+                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
+                      PERSONA BLOCK — Directriz de comportamiento del agente
+                    </span>
                     <button
-                      onClick={async () => {
-                        setConsoleLoading(true);
-                        try {
-                          const r = await fetch('/api/agent-core/console-run', {
+                      onClick={() => {
+                        if (window.confirm('¿Confirmas cambiar la directriz de comportamiento del agente?')) {
+                          setSoulSaving('persona');
+                          fetch('/api/hermes/soul-update', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ command: consoleCommand })
-                          });
-                          if (r.ok) {
-                            const res = await r.json();
-                            setConsoleResult(res);
-                          }
-                        } catch (err) {
-                          console.error(err);
-                        } finally {
-                          setConsoleLoading(false);
+                            body: JSON.stringify({ block: 'persona', content: soulPersona })
+                          }).then(r => {
+                            if (!r.ok) throw new Error('Error al guardar');
+                          }).catch(err => {
+                            console.error(err);
+                          }).finally(() => setSoulSaving(null));
                         }
                       }}
-                      className="bg-cyan-500/10 text-cyan-200 border border-cyan-700/50 text-[8.5px] px-2 py-1 rounded hover:bg-cyan-500/20 uppercase font-mono font-bold cursor-pointer"
-                      disabled={consoleLoading}
+                      disabled={soulSaving === 'persona'}
+                      className="text-[8px] bg-purple-500/10 text-purple-200 border border-purple-700/50 hover:bg-purple-500/20 px-2 py-0.5 rounded uppercase font-mono font-bold disabled:opacity-50"
                     >
-                      {consoleLoading ? 'EJECUTANDO...' : 'RUN'}
+                      {soulSaving === 'persona' ? 'GUARDANDO...' : 'GUARDAR'}
                     </button>
                   </div>
+                  <textarea
+                    value={soulPersona}
+                    onChange={(e) => setSoulPersona(e.target.value)}
+                    className="w-full text-[10px] p-1.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none resize-none"
+                    rows={3}
+                    placeholder="Define cómo debe comportarse el agente..."
+                  />
                 </div>
 
-                {/* 5. COGNITIVE ONBOARDING EXPEDIENT (DYNAMIC & VOICE-FIRST ORB EXPERIENCE) */}
-                <div className="border border-cyan-800/40 bg-gradient-to-b from-cyan-950/10 to-cyan-950/20 p-3 rounded-lg space-y-3 shadow-[0_5px_15px_rgba(0,0,0,0.4)]">
-                  <div className="flex justify-between items-center pb-1.5 border-b border-cyan-950/40">
-                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono flex items-center gap-1">
-                      <Cpu className="w-2.5 h-2.5 text-cyan-400" />
-                      ONBOARDING MULTIMODAL DIRECTO (HUD VOICE CORE)
+                {/* TASK BLOCK */}
+                <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded">
+                  <div className="flex justify-between items-center mb-1 pb-1 border-b border-cyan-950/30">
+                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
+                      TASK BLOCK — Misión activa del agente
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      {/* Audio Synthesizer toggle switch */}
-                      <button
-                        onClick={() => {
-                          const muted = !ttsMuted;
-                          setTtsMuted(muted);
-                          if (muted) {
-                            window.speechSynthesis.cancel();
-                            setOrbState('idle');
-                          } else {
-                            if (onboardingData?.nextFormState) {
-                              const t = onboardingData.nextFormState.voiceText || onboardingData.nextFormState.question;
-                              speakText(t);
-                            }
-                          }
-                        }}
-                        className={`p-1 rounded cursor-pointer transition-all border ${
-                          ttsMuted 
-                            ? 'bg-rose-950/20 text-rose-450 border-rose-900/40' 
-                            : 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40 animate-pulse'
-                        }`}
-                        title={ttsMuted ? "Voz silenciada. Presione para activar." : "Voz activa. Presione para mútear."}
-                      >
-                        {ttsMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-                      </button>
-                      
-                      <span className={`text-[8px] px-2 py-0.5 rounded uppercase font-mono font-bold ${
-                        onboardingData?.initialized 
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                          : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
-                      }`}>
-                        {onboardingData?.initialized ? 'ESTABLE' : 'pendiente'}
-                      </span>
-                    </div>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('¿Confirmas cambiar la misión activa del agente?')) {
+                          setSoulSaving('task');
+                          fetch('/api/hermes/soul-update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ block: 'task', content: soulTask })
+                          }).then(r => {
+                            if (!r.ok) throw new Error('Error al guardar');
+                          }).catch(err => {
+                            console.error(err);
+                          }).finally(() => setSoulSaving(null));
+                        }
+                      }}
+                      disabled={soulSaving === 'task'}
+                      className="text-[8px] bg-emerald-500/10 text-emerald-200 border border-emerald-700/50 hover:bg-emerald-500/20 px-2 py-0.5 rounded uppercase font-mono font-bold disabled:opacity-50"
+                    >
+                      {soulSaving === 'task' ? 'GUARDANDO...' : 'GUARDAR'}
+                    </button>
                   </div>
+                  <textarea
+                    value={soulTask}
+                    onChange={(e) => setSoulTask(e.target.value)}
+                    className="w-full text-[10px] p-1.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none resize-none"
+                    rows={3}
+                    placeholder="Define la misión activa del agente..."
+                  />
+                </div>
 
-                  {/* HIGH FIDELITY REACTIVE ENERGY ORB GRAPHICS */}
-                  <div 
-                    onClick={() => {
-                      if (orbState === 'speaking') {
-                        window.speechSynthesis.cancel();
-                        setStatus('STANDBY');
-                        setOrbState('idle');
-                        addLog('system', '[ORB INTERRUPT] El Creador interrumpió el canal de voz de NIM de forma física.');
-                      }
-                    }}
-                    title={orbState === 'speaking' ? 'Interrumpir voz de NIM (hacer que se calle)' : 'Telemetría de la IA'}
-                    className="flex flex-col items-center justify-center p-4 bg-[#000d1a]/85 border border-cyan-950/60 rounded-lg relative overflow-hidden my-1 shadow-inner cursor-pointer"
-                  >
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,18,36,0.95)_0%,transparent_100%)] pointer-events-none" />
-                    
-                    {/* Glowing outer rings and spiral spikes */}
-                    <div className="relative w-20 h-20 flex items-center justify-center z-10">
-                      {/* Outer Aura layer 1 */}
-                      <div className={`absolute inset-0 rounded-full blur-2xl transition-all duration-700 ${
-                        orbState === 'speaking' ? 'bg-cyan-400/40 scale-125 animate-pulse' :
-                        orbState === 'thinking' ? 'bg-amber-400/35 scale-130' :
-                        orbState === 'listening' ? 'bg-fuchsia-500/40 scale-145' :
-                        'bg-cyan-500/15 scale-100 animate-pulse'
-                      }`} />
-
-                      {/* Medium Aura layer 2 */}
-                      <div className={`absolute w-14 h-14 rounded-full blur-md transition-all duration-500 ${
-                        orbState === 'speaking' ? 'bg-emerald-400/40 scale-110 animate-ping' :
-                        orbState === 'thinking' ? 'bg-amber-500/45 scale-105 animate-pulse' :
-                        orbState === 'listening' ? 'bg-purple-500/50 scale-120 animate-pulse' :
-                        'bg-cyan-400/25 scale-95'
-                      }`} />
-
-                      {/* Spikes / Waves simulation */}
-                      <div className={`absolute w-16 h-16 border border-cyan-500/25 rounded-full transition-all duration-1000 ${
-                        orbState === 'speaking' ? 'animate-[spin_2s_linear_infinite] scale-115 border-t-emerald-400' :
-                        orbState === 'thinking' ? 'animate-[spin_1s_linear_infinite] scale-120 border-r-amber-400' :
-                        orbState === 'listening' ? 'animate-ping scale-125 border-l-purple-400' :
-                        'animate-[spin_7s_linear_infinite]'
-                      }`} />
-
-                      {/* Dense Core Orb */}
-                      <div className={`w-10 h-10 rounded-full border shadow-[0_0_20px_rgba(34,211,238,0.7)] transition-all duration-500 flex items-center justify-center ${
-                        orbState === 'speaking' ? 'bg-gradient-to-tr from-emerald-600 to-[#00f2ff] border-emerald-250 scale-110' :
-                        orbState === 'thinking' ? 'bg-gradient-to-tr from-amber-600 to-[#ff9900] border-amber-300' :
-                        orbState === 'listening' ? 'bg-gradient-to-tr from-purple-700 to-[#ee82ee] border-purple-300 scale-105' :
-                        'bg-gradient-to-tr from-cyan-600 to-[#00bfff] border-cyan-300 hover:scale-105'
-                      }`}>
-                        {/* Interactive pulsating frequency core */}
-                        <div className={`w-3.5 h-3.5 bg-white rounded-full opacity-90 ${
-                          orbState === 'speaking' ? 'animate-ping scale-110' :
-                          orbState === 'thinking' ? 'animate-pulse' :
-                          orbState === 'listening' ? 'animate-ping duration-300 shadow-[0_0_10px_white]' :
-                          'animate-pulse shadow-[0_0_5px_white]'
-                        }`} />
-                      </div>
-                    </div>
-                    
-                    {/* Mode tag indicator bar */}
-                    <span className="text-[7.5px] uppercase font-mono tracking-widest text-cyan-400/90 mt-3 font-bold flex items-center gap-1.5 z-10 bg-[#00050c]/80 px-2 py-0.5 rounded border border-cyan-950/40 shadow-sm">
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        orbState === 'speaking' ? 'bg-emerald-400 animate-ping' :
-                        orbState === 'thinking' ? 'bg-amber-400 animate-spin' :
-                        orbState === 'listening' ? 'bg-purple-400 animate-pulse' :
-                        'bg-cyan-400'
-                      }`} />
-                      TELEMETRÍA ORB: {orbState.toUpperCase()}
+                {/* MCP CONNECTIONS */}
+                <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded">
+                  <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-cyan-950/30">
+                    <Server className="w-3 h-3 text-cyan-400" />
+                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
+                      MCP CONNECTIONS — Servidores conectados
                     </span>
+                    <span className="ml-auto text-[8px] text-cyan-600 font-mono">{mcpServers.length} activos</span>
                   </div>
-
-                  {/* System status feedback line */}
-                  {systemStatusMessage && (
-                    <div className="text-[8.5px] font-mono p-1 bg-[#010912] border border-cyan-900/40 rounded text-cyan-300 flex items-center gap-1 bg-cyan-950/10 animate-pulse">
-                      <Info className="w-3 h-3 text-[#00f2ff] shrink-0" />
-                      <span className="truncate uppercase tracking-wider">{systemStatusMessage}</span>
-                    </div>
-                  )}
-
-                  {onboardingData?.nextFormState ? (
-                    <div className="bg-[#010912] p-3 rounded-lg border border-cyan-950 text-cyan-100 font-mono space-y-2.5">
-                      <div className="flex gap-1.5 items-start">
-                        <span className="text-[10px] text-cyan-500 font-bold font-mono">📟 [NIM CORE]</span>
-                        <p className="text-[10.5px] text-cyan-200 leading-relaxed text-wrap flex-1">
-                          {onboardingData.nextFormState.question}
-                        </p>
-                      </div>
-                      
-                      {/* OPTIONS RENDERING (Dynamic choices Grid requested) */}
-                      {onboardingData.nextFormState.options ? (
-                        <div className="grid grid-cols-2 gap-1.5 pt-1">
-                          {onboardingData.nextFormState.options.map((option) => (
-                            <button
-                              key={option}
-                              onClick={async () => {
-                                setOnboardingLoading(true);
-                                setOrbState('thinking');
-                                try {
-                                  const r = await fetch('/api/agent-core/onboarding/response', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      field: onboardingData.nextFormState?.fieldToUpdate,
-                                      value: option
-                                    })
-                                  });
-                                  if (r.ok) {
-                                    const res = await r.json();
-                                    setOnboardingData(res);
-                                    if (res.message) {
-                                      setSystemStatusMessage(res.message);
-                                    }
-                                    setOnboardingInput('');
-                                    await fetchCoreStatus();
-                                  }
-                                } catch (err) {
-                                  console.error(err);
-                                } finally {
-                                  setOnboardingLoading(false);
-                                  setOrbState('idle');
-                                }
-                              }}
-                              className="p-2 bg-[#00050c]/80 border border-cyan-950 hover:border-[#00f2ff]/60 hover:bg-cyan-950/20 text-[#00f2ff] text-[9px] rounded font-bold uppercase tracking-wider text-left transition-all cursor-pointer flex justify-between items-center"
-                            >
-                              <span>{option}</span>
-                              <ChevronRight className="w-3 h-3 text-cyan-500 shrink-0" />
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        /* TEXT COMPONENT LAYOUT with embedded Voice-to-Text */
-                        <div className="flex gap-1.5 items-center pt-1.5">
-                          <input
-                            type="text"
-                            value={onboardingInput}
-                            onChange={(e) => setOnboardingInput(e.target.value)}
-                            onKeyDown={async (e) => {
-                              if (e.key === 'Enter' && onboardingInput.trim() && !onboardingLoading) {
-                                setOnboardingLoading(true);
-                                setOrbState('thinking');
-                                try {
-                                  const r = await fetch('/api/agent-core/onboarding/response', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      field: onboardingData.nextFormState?.fieldToUpdate,
-                                      value: onboardingInput
-                                    })
-                                  });
-                                  if (r.ok) {
-                                    const res = await r.json();
-                                    setOnboardingData(res);
-                                    if (res.message) {
-                                      setSystemStatusMessage(res.message);
-                                    }
-                                    setOnboardingInput('');
-                                    await fetchCoreStatus();
-                                  }
-                                } catch (err) {
-                                  console.error(err);
-                                } finally {
-                                  setOnboardingLoading(false);
-                                  setOrbState('idle');
-                                }
-                              }
-                            }}
-                            className="flex-1 text-[10.5px] p-2 bg-[#00050a] border border-cyan-950/80 rounded-md text-cyan-100 focus:outline-none focus:border-cyan-500 font-mono focus:shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                            placeholder={
-                              onboardingData.nextFormState.fieldToUpdate === 'criticalAreasOfFocus'
-                                ? 'Esquemas clave: Web3, React UX, Rust backend...'
-                                : onboardingData.nextFormState.fieldToUpdate?.includes('apiKey')
-                                ? 'Introduzca API key (ej. sk-proj-... o dummy_key)...'
-                                : 'Inserte respuesta...'
-                            }
-                            disabled={onboardingLoading}
-                          />
-
-                          {/* Interactive speech-to-text voice recognition activator */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const SpeechClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-                              if (!SpeechClass) {
-                                setSystemStatusMessage("✕ WebSpeechRecognition no es compatible con el navegador.");
-                                return;
-                              }
-                              const rec = new SpeechClass();
-                              rec.lang = 'es-ES';
-                              rec.continuous = false;
-                              rec.onstart = () => {
-                                setOrbState('listening');
-                                setSystemStatusMessage("📟 [ESCUCHANDO...] Hable por su micrófono...");
-                              };
-                              rec.onresult = (e: any) => {
-                                const transcript = e.results[0][0].transcript;
-                                setOnboardingInput(transcript);
-                                setSystemStatusMessage(`🗣 DETECTADO: "${transcript}"`);
-                                setOrbState('idle');
-                              };
-                              rec.onerror = (e: any) => {
-                                setOrbState('idle');
-                                console.error('Speech recognition error: ', e);
-                              };
-                              rec.onend = () => {
-                                setOrbState('idle');
-                              };
-                              rec.start();
-                            }}
-                            className="p-2 rounded border border-purple-800/40 bg-[#0c001a] text-[#da70d6] hover:bg-purple-950/40 hover:text-purple-300 transition-all flex items-center justify-center cursor-pointer shrink-0"
-                            title="Comando por voz"
-                            disabled={onboardingLoading}
-                          >
-                            <Mic className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={async () => {
-                              if (!onboardingInput.trim()) return;
-                              setOnboardingLoading(true);
-                              setOrbState('thinking');
-                              try {
-                                const r = await fetch('/api/agent-core/onboarding/response', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      field: onboardingData.nextFormState?.fieldToUpdate,
-                                      value: onboardingInput
-                                    })
-                                });
-                                if (r.ok) {
-                                  const res = await r.json();
-                                  setOnboardingData(res);
-                                  if (res.message) {
-                                    setSystemStatusMessage(res.message);
-                                  }
-                                  setOnboardingInput('');
-                                  await fetchCoreStatus();
-                                }
-                              } catch (err) {
-                                console.error(err);
-                              } finally {
-                                setOnboardingLoading(false);
-                                setOrbState('idle');
-                              }
-                            }}
-                            className="bg-cyan-500/10 text-cyan-200 border border-cyan-700/50 text-[9px] px-3 py-2 rounded hover:bg-cyan-500/20 uppercase font-bold cursor-pointer font-mono shrink-0"
-                            disabled={onboardingLoading}
-                          >
-                            {onboardingLoading ? 'SYNC...' : 'ENVIAR'}
-                          </button>
-                        </div>
-                      )}
+                  {mcpServers.length === 0 ? (
+                    <div className="text-[9px] text-cyan-600/60 italic text-center py-3 font-mono">
+                      No hay servidores MCP registrados.
                     </div>
                   ) : (
-                    /* COMPLETED PROFILE GRAPHICS AND BIOGRAPHY DATA CARDS */
-                    <div className="bg-[#000810]/40 p-2.5 rounded-lg border border-cyan-950 text-[10px] space-y-2 font-mono">
-                      <div className="flex justify-between items-center bg-[#010912]/80 p-1 px-2 border border-cyan-950/30 rounded">
-                        <span className="text-cyan-600 text-[8.5px]">LLM CREDENCIALES INFRA:</span>
-                        <span className="text-[#00f2ff] font-bold text-[8.5px] uppercase">
-                          ⚡ {onboardingData?.profile?.infrastructure?.llmProvider ? `${onboardingData.profile.infrastructure.llmProvider} [STABLE]` : 'ollama bypass'}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <span className="text-cyan-600">SEÑOR COMPILADO:</span>
-                        <span className="text-cyan-200 font-bold">{onboardingData?.profile?.userName || 'No Configurado'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-cyan-600">ROL DESIGNADO:</span>
-                        <span className="text-cyan-300">{onboardingData?.profile?.professionalRole || 'No Configurado'}</span>
-                      </div>
-                      <div className="flex justify-between flex-wrap gap-1">
-                        <span className="text-cyan-600 block">ESPECIALIZACIÓN PROACTIVA VITAL:</span>
-                        <span className="text-emerald-450 font-bold text-wrap w-full mt-0.5 bg-[#010a14]/60 p-1 px-1.5 rounded border border-cyan-950/30">
-                          {onboardingData?.profile?.criticalAreasOfFocus?.join(', ') || 'Inicializando indexado de reserva...'}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={async () => {
-                          setOnboardingLoading(true);
-                          setOrbState('thinking');
-                          setSystemStatusMessage("Eliminando configuración biográfica...");
-                          try {
-                            const r = await fetch('/api/agent-core/onboarding/response', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ field: 'reset', value: '' })
-                            });
-                            if (r.ok) {
-                              const res = await r.json();
-                              setOnboardingData(res);
-                              setSystemStatusMessage(res.message || "Canal biográfico desinstalado.");
-                              await fetchCoreStatus();
-                            }
-                          } catch (err) {
-                            console.error(err);
-                          } finally {
-                            setOnboardingLoading(false);
-                            setOrbState('idle');
-                          }
-                        }}
-                        className="w-full mt-2.5 text-[8.5px] bg-red-900/10 text-red-300 hover:bg-red-900/20 border border-red-950/50 py-1.5 rounded-md uppercase text-center font-bold font-mono cursor-pointer tracking-wider transition-all"
-                      >
-                        RE-INICIAR EXPEDIENTE BIOGRÁFICO & INFRAESTRUCTURA
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* 6. TELEMETRY SEARCH ROUTER AND MULTI-SOURCE SIMULATOR */}
-                <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded space-y-2">
-                  <div className="flex justify-between items-center mb-1 pb-1 border-b border-cyan-950/30">
-                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono flex items-center gap-1">
-                      <Activity className="w-2.5 h-2.5 text-cyan-400" />
-                      SIMULADOR DE TELEMETRÍA (RUTAS COGNITIVAS)
-                    </span>
-                  </div>
-
-                  <div className="space-y-1.5 font-mono text-[9px]">
-                    <div className="flex gap-1">
-                      <input
-                        value={telemetryQuery}
-                        onChange={(e) => setTelemetryQuery(e.target.value)}
-                        className="flex-1 text-[10px] p-0.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:outline-none"
-                        placeholder="especificación mcp..."
-                      />
-                      <select
-                        value={telemetryScope}
-                        onChange={(e) => setTelemetryScope(e.target.value)}
-                        className="bg-[#010912] border border-cyan-950 text-cyan-200 p-0.5 rounded text-[8.5px] font-mono focus:outline-none"
-                      >
-                        <option value="programming_code_markdown">PROGRAMMING (TAVILY)</option>
-                        <option value="general_facts">GENERAL FACTS (GOOGLE)</option>
-                        <option value="unreleased_news_trends">NEWS SENSORS (PERPLEXITY)</option>
-                      </select>
-                      <button
-                        onClick={async () => {
-                          setTelemetryLoading(true);
-                          setTelemetryResult(null);
-                          try {
-                            const r = await fetch('/api/agent-core/telemetry/search', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ query: telemetryQuery, scope: telemetryScope })
-                            });
-                            if (r.ok) {
-                              const d = await r.json();
-                              setTelemetryResult(d);
-                            }
-                          } catch (err) {
-                            console.error(err);
-                          } finally {
-                            setTelemetryLoading(false);
-                          }
-                        }}
-                        className="bg-cyan-500/10 text-cyan-200 border border-cyan-700/50 hover:bg-cyan-500/20 px-2 py-0.5 rounded text-[8.5px] font-bold cursor-pointer"
-                        disabled={telemetryLoading}
-                      >
-                        {telemetryLoading ? 'RUTANDO...' : 'ENRUTAR'}
-                      </button>
-                    </div>
-
-                    {telemetryResult && (
-                      <div className="bg-[#000810] border border-cyan-950 rounded p-1.5 text-[8.5px] space-y-1 text-cyan-100 max-h-[140px] overflow-auto select-text">
-                        <div className="flex justify-between border-b border-cyan-950/40 pb-0.5 mb-1">
-                          <span className="text-cyan-500 uppercase font-bold">CANAL ELECTO:</span>
-                          <span className="text-emerald-400 font-bold uppercase select-all font-mono">
-                            {telemetryResult.providerUsed}
-                          </span>
-                        </div>
-                        {telemetryResult.results?.map((res: any, idx: number) => (
-                          <div key={idx} className="space-y-1">
-                            <span className="text-cyan-600 font-bold block">[{res.source}] {res.title}</span>
-                            <pre className="text-cyan-200/90 whitespace-pre-wrap font-mono select-text block overflow-x-auto bg-[#010912]/40 p-1 rounded-sm border border-cyan-950/30">
-                              {res.content}
-                            </pre>
-                            {res.url && <a href={res.url} target="_blank" rel="noreferrer" className="text-cyan-500 hover:underline block text-[7.5px]" referrerPolicy="no-referrer">{res.url}</a>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 7. AUTONOMOUS MCP SERVER DISCOVERY AND CO-PILOT */}
-                <div className="border border-cyan-950/40 bg-cyan-950/10 p-2 rounded space-y-2">
-                  <div className="flex justify-between items-center mb-1 pb-1 border-b border-cyan-950/30">
-                    <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono flex items-center gap-1">
-                      <Terminal className="w-2.5 h-2.5 text-cyan-400" />
-                      CO-PILOTO DE ADQUISICIÓN AUTÓNOMA MCP
-                    </span>
-                    <button
-                      onClick={() => setShowMcpDetail(!showMcpDetail)}
-                      className={`text-[8.5px] border px-2 py-0.5 rounded font-mono uppercase font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        showMcpDetail 
-                          ? 'bg-cyan-500/20 text-cyan-100 border-cyan-500/70' 
-                          : 'bg-cyan-500/5 text-cyan-400 border-cyan-950/60 hover:bg-cyan-500/10'
-                      }`}
-                    >
-                      {showMcpDetail ? '✕ CERRAR CONFIG' : '⚙ SOPORTE & CONFIG'}
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5 font-mono text-[9px]">
-                    {showMcpDetail && (
-                      <div className="bg-[#000a14] border border-cyan-800/40 rounded p-2.5 my-2 space-y-2.5 text-[8.5px] font-mono leading-relaxed select-text animate-fadeIn">
-                        {/* Native support sub-section */}
-                        <div>
-                          <div className="text-cyan-400 font-bold border-b border-cyan-950/40 pb-0.5 mb-1.5 uppercase tracking-wider text-[8px]">
-                            ⚡ MCP SOPORTADOS DE FORMA NATIVA (DETERMINISTAS)
-                          </div>
-                          <div className="grid grid-cols-2 gap-1 text-[8px] text-cyan-350">
-                            {mcpData?.discovery_keywords && Object.entries(mcpData.discovery_keywords).map(([keyword, pkg]: any) => (
-                              <div key={keyword} className="bg-[#010912] p-1 rounded border border-cyan-950/50 flex flex-col">
-                                <span className="font-bold text-[#00f2ff]">{keyword.toUpperCase()}</span>
-                                <span className="text-[7.5px] text-cyan-600 truncate">{pkg}</span>
-                              </div>
-                            ))}
-                            <div className="bg-[#010912] p-1 rounded border border-cyan-950/50 flex flex-col justify-center">
-                              <span className="font-bold text-cyan-400 italic">REPOSITORIO GLOBAL</span>
-                              <span className="text-[7.5px] text-cyan-700">Auto-descargador NPM</span>
+                    <div className="space-y-1">
+                      {mcpServers.map((srv, idx) => (
+                        <div key={idx} className="bg-[#010912] p-1.5 rounded border border-cyan-950/50 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${
+                              srv.status === 'connected' ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-gray-600'
+                            }`} />
+                            <div>
+                              <span className="text-cyan-200 font-bold text-[9px] block font-mono">{srv.name || srv.id}</span>
+                              {srv.transport && <span className="text-cyan-600 text-[7px] block font-mono">Transporte: {srv.transport}</span>}
                             </div>
                           </div>
-                        </div>
-
-                        {/* Connected MCP servers sub-section */}
-                        <div>
-                          <div className="text-cyan-400 font-bold border-b border-cyan-950/40 pb-0.5 mb-1.5 uppercase tracking-wider text-[8px]">
-                            🔗 CANALES DE CONEXIÓN ACTIVOS
-                          </div>
-                          <div className="space-y-1">
-                            {mcpData?.active_servers && mcpData.active_servers.map((srv: any, idx: number) => (
-                              <div key={idx} className="bg-[#010912] p-1.5 rounded border border-cyan-950/50 flex items-center justify-between">
-                                <div>
-                                  <span className="text-cyan-200 font-bold block">{srv.name || srv.id}</span>
-                                  <span className="text-cyan-600 text-[7px] block">Transporte: {srv.transport} | Cmd: {srv.command || 'None'}</span>
-                                </div>
-                                <span className={`px-1.5 py-0.5 rounded text-[7px] font-bold uppercase border ${
-                                  srv.status === 'connected' 
-                                    ? 'bg-emerald-500/10 text-emerald-450 border-emerald-550/30' 
-                                    : 'bg-rose-500/10 text-rose-450 border-rose-550/30 animate-pulse'
-                                }`}>
-                                  {srv.status}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Configuration JSON sub-section */}
-                        <div>
-                          <div className="text-cyan-400 font-bold border-b border-cyan-950/40 pb-0.5 mb-1.5 uppercase tracking-wider text-[8px]">
-                            📂 CONFIGURACIÓN MCP REGISTRADA (mcp_settings.json)
-                          </div>
-                          <pre className="p-1.5 bg-[#00050c] text-cyan-200 border border-cyan-950 rounded text-[7.5px] font-mono overflow-auto max-h-[120px] select-all custom-scrollbar">
-                            {JSON.stringify(mcpData, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-3 gap-1 mb-1">
-                      {mcpData?.active_servers?.map((srv: any, idx: number) => (
-                        <div key={idx} className="bg-[#000810]/60 p-1 border border-cyan-950/50 rounded flex flex-col justify-between">
-                          <span className="text-cyan-200 text-[8px] font-bold block truncate">{srv.name}</span>
-                          <span className={`text-[7px] uppercase block font-bold ${
-                            srv.status === 'connected' ? 'text-emerald-400' : 'text-rose-400 animate-pulse'
+                          <span className={`px-1.5 py-0.5 rounded text-[7px] font-bold uppercase font-mono border ${
+                            srv.status === 'connected'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              : 'bg-gray-500/10 text-gray-400 border-gray-500/30'
                           }`}>
-                            ⚡ {srv.status}
+                            {srv.status === 'connected' ? 'CONECTADO' : 'DESCONECTADO'}
                           </span>
                         </div>
                       ))}
                     </div>
-
-                    <div className="flex gap-1">
-                      <input
-                        value={mcpKeyword}
-                        onChange={(e) => setMcpKeyword(e.target.value)}
-                        className="flex-1 text-[10px] p-0.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:outline-none"
-                        placeholder="ej: Slack, Notion, Postgres..."
-                      />
-                      <button
-                        onClick={async () => {
-                          setMcpInstallLoading(true);
-                          setMcpInstallOutput(null);
-                          try {
-                            const r = await fetch('/api/agent-core/mcp/install', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ toolKeyword: mcpKeyword })
-                            });
-                            if (r.ok) {
-                              const d = await r.json();
-                              setMcpInstallOutput(d);
-                              // Reload configuration list
-                              await fetchCoreStatus();
-                            }
-                          } catch (err) {
-                            console.error(err);
-                          } finally {
-                            setMcpInstallLoading(false);
-                          }
-                        }}
-                        className="bg-emerald-500/10 text-emerald-200 border border-emerald-700/50 hover:bg-emerald-500/20 px-2 py-0.5 rounded text-[8.5px] font-bold cursor-pointer"
-                        disabled={mcpInstallLoading}
-                      >
-                        {mcpInstallLoading ? 'CRAWLING...' : 'CONECTAR'}
-                      </button>
-                    </div>
-
-                    {mcpInstallOutput && (
-                      <div className="bg-[#000810] border border-cyan-950 rounded p-1.5 text-[8.5px] space-y-1 text-cyan-100">
-                        <div className="flex justify-between">
-                          <span className="text-cyan-500">ESTADO ADQUISICIÓN:</span>
-                          <span className={mcpInstallOutput.success ? 'text-emerald-400' : 'text-rose-400'}>
-                            {mcpInstallOutput.success ? 'CONEXIÓN INSTALADA CON ÉXITO' : 'ERROR DE CONEXIÓN'}
-                          </span>
-                        </div>
-                        <p className="text-cyan-300/85 leading-relaxed text-wrap">{mcpInstallOutput.message}</p>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
 
               </div>
