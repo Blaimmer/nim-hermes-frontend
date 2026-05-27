@@ -31,7 +31,8 @@ import {
   MessageSquare,
   HelpCircle,
   Hash,
-  Plus
+  Plus,
+  Maximize2
 } from 'lucide-react';
 import { SystemStatus, LogEntry, ChatMessage, Skill, Stats, HermesModel } from './types';
 
@@ -131,6 +132,7 @@ export default function App() {
   const [soulTask, setSoulTask] = useState('');
   const [soulSaving, setSoulSaving] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<any[]>([]);
+  const [expandedBlock, setExpandedBlock] = useState<string | null>(null); // 'human' | 'persona' | 'task' | null
 
   const [evolveSkillId, setEvolveSkillId] = useState('data_compiler');
   const [evolveSkillName, setEvolveSkillName] = useState('Compilador de Datos');
@@ -2041,7 +2043,11 @@ export default function App() {
                     <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
                       HUMAN BLOCK — Cómo Hermes se refiere al Señor
                     </span>
-                    <button
+                    <div className="flex gap-1">
+                      <button onClick={() => setExpandedBlock('human')} className="p-0.5 hover:bg-cyan-500/20 rounded text-cyan-400" title="Expandir">
+                        <Maximize2 className="w-3 h-3" />
+                      </button>
+                      <button
                       onClick={() => {
                         if (window.confirm('¿Confirmas cambiar cómo Hermes se refiere a ti?')) {
                           setSoulSaving('human');
@@ -2062,6 +2068,7 @@ export default function App() {
                       {soulSaving === 'human' ? 'GUARDANDO...' : 'GUARDAR'}
                     </button>
                   </div>
+                  </div>
                   <textarea
                     value={soulHuman}
                     onChange={(e) => setSoulHuman(e.target.value)}
@@ -2077,7 +2084,11 @@ export default function App() {
                     <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
                       PERSONA BLOCK — Directriz de comportamiento del agente
                     </span>
-                    <button
+                    <div className="flex gap-1">
+                      <button onClick={() => setExpandedBlock('persona')} className="p-0.5 hover:bg-purple-500/20 rounded text-purple-400" title="Expandir">
+                        <Maximize2 className="w-3 h-3" />
+                      </button>
+                      <button
                       onClick={() => {
                         if (window.confirm('¿Confirmas cambiar la directriz de comportamiento del agente?')) {
                           setSoulSaving('persona');
@@ -2098,6 +2109,7 @@ export default function App() {
                       {soulSaving === 'persona' ? 'GUARDANDO...' : 'GUARDAR'}
                     </button>
                   </div>
+                  </div>
                   <textarea
                     value={soulPersona}
                     onChange={(e) => setSoulPersona(e.target.value)}
@@ -2113,7 +2125,11 @@ export default function App() {
                     <span className="font-bold tracking-wider text-cyan-400 text-[9px] uppercase font-mono">
                       TASK BLOCK — Misión activa del agente
                     </span>
-                    <button
+                    <div className="flex gap-1">
+                      <button onClick={() => setExpandedBlock('task')} className="p-0.5 hover:bg-emerald-500/20 rounded text-emerald-400" title="Expandir">
+                        <Maximize2 className="w-3 h-3" />
+                      </button>
+                      <button
                       onClick={() => {
                         if (window.confirm('¿Confirmas cambiar la misión activa del agente?')) {
                           setSoulSaving('task');
@@ -2133,6 +2149,7 @@ export default function App() {
                     >
                       {soulSaving === 'task' ? 'GUARDANDO...' : 'GUARDAR'}
                     </button>
+                  </div>
                   </div>
                   <textarea
                     value={soulTask}
@@ -3096,6 +3113,54 @@ export default function App() {
             {/* Footer */}
             <footer className="p-3 border-t border-cyan-900/50 bg-[#01090f] text-center text-[8.5px] text-cyan-600 font-mono">
               PORTAL DE GESTIÓN CORPORATIVA REGULATORIA NIM // HERMES BACKEND TELEMETRY 2026
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* EXPAND MODAL — Editor de soul docs a pantalla semi-completa */}
+      {expandedBlock && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setExpandedBlock(null)}>
+          <div className="bg-[#020b12] border border-cyan-500/40 rounded-lg w-full max-w-4xl max-h-[85vh] flex flex-col shadow-[0_0_35px_rgba(0,242,255,0.1)]" onClick={e => e.stopPropagation()}>
+            <header className="flex items-center justify-between p-4 border-b border-cyan-900/40 bg-cyan-950/20">
+              <h2 className="text-sm font-mono font-bold tracking-wider text-cyan-200 uppercase">
+                {expandedBlock === 'human' ? 'Human Block — Cómo Hermes se refiere al Señor' :
+                 expandedBlock === 'persona' ? 'Persona Block — Directriz de comportamiento' :
+                 'Task Block — Misión activa del agente'}
+              </h2>
+              <button onClick={() => setExpandedBlock(null)} className="text-cyan-500 hover:text-red-400 transition">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </header>
+            <div className="p-4 flex-1 overflow-hidden">
+              <textarea
+                value={expandedBlock === 'human' ? soulHuman : expandedBlock === 'persona' ? soulPersona : soulTask}
+                onChange={(e) => {
+                  if (expandedBlock === 'human') setSoulHuman(e.target.value);
+                  else if (expandedBlock === 'persona') setSoulPersona(e.target.value);
+                  else setSoulTask(e.target.value);
+                }}
+                className="w-full h-full min-h-[400px] text-xs p-4 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none resize-none"
+                placeholder="Escribe aquí..."
+              />
+            </div>
+            <footer className="flex justify-end gap-2 p-4 border-t border-cyan-900/40">
+              <button onClick={() => setExpandedBlock(null)} className="px-4 py-2 text-xs bg-cyan-950/50 border border-cyan-800 text-cyan-300 rounded hover:bg-cyan-900 font-mono uppercase">
+                Cerrar
+              </button>
+              <button onClick={() => {
+                if (window.confirm('¿Confirmas guardar los cambios?')) {
+                  setSoulSaving(expandedBlock);
+                  fetch('/api/hermes/soul-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ block: expandedBlock, content: expandedBlock === 'human' ? soulHuman : expandedBlock === 'persona' ? soulPersona : soulTask })
+                  }).catch(console.error).finally(() => setSoulSaving(null));
+                  setExpandedBlock(null);
+                }
+              }} className="px-4 py-2 text-xs bg-cyan-500/20 border border-cyan-400 text-cyan-200 rounded hover:bg-cyan-500/30 font-mono uppercase font-bold">
+                Guardar
+              </button>
             </footer>
           </div>
         </div>
