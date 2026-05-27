@@ -23,6 +23,7 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {
         ignored: ['**/agent-memory-db.json', '**/data/**', '**/skills/**']
       },
+      allowedHosts: ['equipped-combat-summer-pichunter.trycloudflare.com'],
     },
   };
 });

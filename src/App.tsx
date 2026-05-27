@@ -506,77 +506,54 @@ export default function App() {
     }
   }, [chatMessages, activeTab]);
 
-  // Speech Recognition setup
+  // Inicializar reconocimiento de voz al montar
   useEffect(() => {
     if (SpeechRecognitionAPI) {
-      const rec = new SpeechRecognitionAPI();
-      rec.continuous = true;
-      rec.interimResults = false;
-      rec.lang = 'es-ES';
-
-      rec.onstart = () => {
-        addLog('system', 'Micrófono en línea. Analizando entrada de voz en busca de instrucciones...');
-        setStatus('LISTENING');
-      };
-
-      rec.onresult = (event: any) => {
-        const resultIndex = event.resultIndex;
-        const transcript = event.results[resultIndex][0].transcript.trim();
-        
-        addLog('user', `Comando recibido vía voz: "${transcript}"`);
-
-        if (isWakeWordMode) {
-          const lowercaseTranscript = transcript.toLowerCase();
-          if (lowercaseTranscript.includes('nim')) {
-            const cleanPrompt = transcript.replace(/nim/i, '').trim();
-            addChatMessage('user', transcript);
-
-            if (cleanPrompt) {
-              submitPrompt(cleanPrompt);
-            } else {
-              speakText('Sí, Señor. Estoy escuchando. ¿En qué le puedo asistir?');
-              addLog('thought', 'Filtro activador NIM disparado. Esperando parámetro de orden.');
-              addChatMessage('nim', 'Sí, Señor. Estoy escuchando. ¿En qué le puedo asistir?');
-            }
-          } else {
-            addLog('thought', `Audio descartado: No contiene la llamada activadora obligatoria "NIM".`);
-          }
-        } else {
-          addChatMessage('user', transcript);
-          submitPrompt(transcript);
-        }
-      };
-
-      rec.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error !== 'no-speech') {
-          addLog('system', `Error en la señal del captador vocal: ${event.error}`);
-          setStatus('ERROR');
-        }
-      };
-
-      rec.onend = () => {
-        if (isWakeWordMode && status !== 'ERROR') {
-          try {
-            rec.start();
-          } catch (e) {}
-        } else {
-          setStatus('STANDBY');
-          addLog('system', 'Receptor de audición desactivado.');
-        }
-      };
-
-      recognitionRef.current = rec;
+      const rec = createSpeechRecognition();
+      if (rec) recognitionRef.current = rec;
     } else {
       addLog('system', 'Web Speech API no disponible de forma nativa. Usando conmutador simulado.');
     }
 
     return () => {
       if (recognitionRef.current) {
-        recognitionRef.current.abort();
+        try { recognitionRef.current.abort(); } catch (e) {}
       }
     };
-  }, [isWakeWordMode]);
+  }, []);
+
+  // Direct Mic toggle button — recrea el recognition cada vez para evitar estado terminal
+  const toggleListening = () => {
+    if (status === 'LISTENING') {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      setStatus('STANDBY');
+      setOrbState('idle');
+      return;
+    }
+
+    // Siempre crear un recognition fresco antes de empezar
+    const rec = createSpeechRecognition();
+    if (!rec) {
+      // Fallback simulado si no hay API
+      setStatus('LISTENING');
+      setOrbState('listening');
+      addLog('system', 'Simulacion de canal de audio virtual activada. Escriba en la barra.');
+      setTimeout(() => {
+        setStatus(prev => prev === 'LISTENING' ? 'STANDBY' : prev);
+        setOrbState('idle');
+      }, 8000);
+      return;
+    }
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+    } catch (e) {
+      console.error('Error iniciando reconocimiento:', e);
+      setStatus('STANDBY');
+    }
+  };
 
   // Log Trace generator
   const addLog = (type: LogEntry['type'], message: string) => {
@@ -795,30 +772,75 @@ export default function App() {
     submitPrompt(prompt);
   };
 
-  // Direct Mic toggle button
-  const toggleListening = () => {
-    if (status === 'LISTENING') {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-      setStatus('STANDBY');
-    } else {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (error) {
-          console.error(error);
+  // Crea un nuevo objeto de reconocimiento de voz desde cero.
+  // Necesario porque SpeechRecognition queda en estado terminal tras detenerse
+  // y no se puede reusar — hay que recrearlo cada vez.
+  const createSpeechRecognition = () => {
+    if (!SpeechRecognitionAPI) return null;
+    const rec = new SpeechRecognitionAPI();
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.lang = 'es-ES';
+
+    rec.onstart = () => {
+      addLog('system', 'Microfono en linea. Analizando entrada de voz en busca de instrucciones...');
+      setStatus('LISTENING');
+      setOrbState('listening');
+    };
+
+    rec.onresult = (event: any) => {
+      const resultIndex = event.resultIndex;
+      const transcript = event.results[resultIndex][0].transcript.trim();
+      
+      addLog('user', `Comando recibido via voz: "${transcript}"`);
+
+      if (isWakeWordMode) {
+        const lowercaseTranscript = transcript.toLowerCase();
+        if (lowercaseTranscript.includes('nim')) {
+          const cleanPrompt = transcript.replace(/nim/i, '').trim();
+          addChatMessage('user', transcript);
+          if (cleanPrompt) {
+            submitPrompt(cleanPrompt);
+          } else {
+            speakText('Si, Senor. Estoy escuchando. En que le puedo asistir?');
+            addLog('thought', 'Filtro activador NIM disparado. Esperando parametro de orden.');
+            addChatMessage('nim', 'Si, Senor. Estoy escuchando. En que le puedo asistir?');
+          }
+        } else {
+          addLog('thought', `Audio descartado: No contiene la llamada activadora obligatoria "NIM".`);
         }
       } else {
-        // Mock fallback simulation mode in iframe sandboxes
-        setStatus('LISTENING');
-        addLog('system', 'Iniciando simulación de canal de audio virtual NIM. Escriba un comando en la barra.');
-        speakText('Canal de recepción física activo, Señor. Aguardo su parámetro por consola.');
-        setTimeout(() => {
-          if (status === 'LISTENING') setStatus('STANDBY');
-        }, 6000);
+        addChatMessage('user', transcript);
+        submitPrompt(transcript);
       }
-    }
+    };
+
+    rec.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error !== 'no-speech') {
+        addLog('system', `Error en la senal del captador vocal: ${event.error}`);
+        setStatus('ERROR');
+      }
+    };
+
+    rec.onend = () => {
+      if (isWakeWordMode && status !== 'ERROR') {
+        try { rec.start(); } catch (e) {
+          // Si falla el reinicio en modo wake, recrear
+          const newRec = createSpeechRecognition();
+          if (newRec) {
+            recognitionRef.current = newRec;
+            try { newRec.start(); } catch (e2) {}
+          }
+        }
+      } else {
+        setStatus('STANDBY');
+        setOrbState('idle');
+        addLog('system', 'Receptor de audicion desactivado.');
+      }
+    };
+
+    return rec;
   };
 
   const toggleWakeWordMode = () => {

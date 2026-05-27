@@ -45,5 +45,54 @@ Conectar el frontend React de NIM con Hermes Agent, manteniendo el dashboard int
 | Panel de sistema | ❓ | Pendiente de prueba |
 
 ### URL de acceso
-- **Dashboard:** http://72.60.123.163:3001
+- **Dashboard (HTTPS):** https://equipped-combat-summer-pichunter.trycloudflare.com
 - **API Server:** http://localhost:8642 (solo local)
+
+---
+
+## 2026-05-27 — Fase 2: Voz (Micrófono + TTS)
+
+### Diagnóstico
+- El código original usaba Web Speech API (`SpeechRecognition`) correctamente
+- **Bug #1:** El objeto `SpeechRecognition` quedaba en estado terminal tras procesar una respuesta. Al hacer clic de nuevo, `.start()` fallaba silenciosamente → el botón no cambiaba de estado visual
+- **Bug #2:** Chrome bloquea el micrófono en orígenes HTTP no-localhost → se necesitaba HTTPS
+
+### Cambios Realizados
+
+#### 1. Refactor del reconocimiento de voz (src/App.tsx)
+- **Antes:** `useEffect` creaba un solo objeto `SpeechRecognition` al montar, dependiente de `isWakeWordMode`. `toggleListening()` intentaba reusarlo.
+- **Después:** Función `createSpeechRecognition()` que crea un objeto fresco cada vez. `toggleListening()` siempre llama a `createSpeechRecognition()` antes de `start()`. El `useEffect` inicial solo crea la referencia base.
+- **Fix clave:** `SpeechRecognition` no es reusable tras detenerse → hay que recrearlo cada vez que se inicia una nueva escucha.
+
+#### 2. Cloudflare Tunnel (HTTPS)
+- **Herramienta:** `cloudflared tunnel --url http://localhost:3001`
+- **Resultado:** URL HTTPS gratuita para desarrollo que permite acceso al micrófono
+- **Fix Vite:** Agregado `allowedHosts` en `vite.config.ts` para aceptar el dominio trycloudflare
+
+#### 3. Fix Vite allowedHosts
+- **Archivo:** `vite.config.ts`
+- **Cambio:** Agregado `server.allowedHosts: ['equipped-combat-summer-pichunter.trycloudflare.com']`
+
+### Verificación
+- ✅ TypeScript compila sin errores
+- ✅ `createSpeechRecognition()` crea objeto fresco cada vez
+- ✅ `toggleListening()` maneja correctamente el ciclo start/stop
+- ✅ HTTPS vía Cloudflare Tunnel funcionando
+- ✅ Vite acepta el host del túnel
+
+### Próximo: Prueba en vivo
+Pendiente que el usuario pruebe el micrófono desde Chrome en la URL HTTPS.
+
+### Estado del Dashboard (actualizado)
+| Función | Estado | Notas |
+|---------|--------|-------|
+| Enviar/recibir mensajes | ✅ | Proxy a Hermes |
+| Slash commands | ✅ | En frontend |
+| Micrófono (STT) | 🔧 | Refactorizado, pendiente prueba live |
+| TTS (voz de respuesta) | ✅ | Web Speech API, misma que antes |
+| Talkmode (wake word "NIM") | 🔧 | Misma lógica, recreado con createSpeechRecognition |
+| Selector de proveedor | ⚠️ | Ignorado; Hermes usa DeepSeek |
+| Panel de skills | ❓ | Pendiente |
+| Sistema de logs | ❓ | Pendiente |
+| Búsqueda web | ❓ | Pendiente |
+| Panel de sistema | ❓ | Pendiente |
