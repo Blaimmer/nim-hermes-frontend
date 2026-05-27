@@ -962,8 +962,10 @@ export default function App() {
     }
   };
 
-  // Selected skill config object
-  const selectedSkill = skills.find(s => s.id === selectedSkillId) || skills[0];
+  // Selected skill config object — con fallback seguro mientras carga
+  const selectedSkill = skills.length > 0 
+    ? (skills.find(s => s.id === selectedSkillId) || skills[0])
+    : null;
 
   const handleToggleSkillEnabled = (id: string) => {
     setSkills(prev => prev.map(s => {
