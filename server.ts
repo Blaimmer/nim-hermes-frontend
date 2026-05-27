@@ -1338,6 +1338,41 @@ app.post('/api/hermes/soul-update', (req, res) => {
   }
 });
 
+// Listar skills reales de Hermes (escaneo recursivo)
+app.get('/api/hermes/skills', (req, res) => {
+  const skillsDir = path.join(os.homedir(), '.hermes', 'skills');
+  const result: any[] = [];
+  
+  function scanDir(dir: string) {
+    try {
+      const items = fs.readdirSync(dir, { withFileTypes: true });
+      for (const item of items) {
+        const fullPath = path.join(dir, item.name);
+        if (item.isDirectory()) {
+          const skillMd = path.join(fullPath, 'SKILL.md');
+          if (fs.existsSync(skillMd)) {
+            const content = fs.readFileSync(skillMd, 'utf-8');
+            const nameMatch = content.match(/^name:\s*(.+)$/m);
+            const descMatch = content.match(/^description:\s*(.+)$/m);
+            result.push({
+              id: item.name,
+              name: nameMatch ? nameMatch[1].trim().replace(/['"]/g, '') : item.name,
+              description: descMatch ? descMatch[1].trim().replace(/['"]/g, '') : 'Sin descripción',
+              enabled: true,
+            });
+          } else {
+            // Recurse into subdirectories
+            scanDir(fullPath);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  
+  scanDir(skillsDir);
+  res.json({ skills: result });
+});
+
 // Estado de integraciones reales (MCP + plataformas + skills)
 app.get('/api/hermes/integrations', async (req, res) => {
   const integrations: any[] = [];

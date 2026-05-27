@@ -320,73 +320,28 @@ export default function App() {
   }, [chatMessages]);
 
 
-  // Connected Skills State
-  const [skills, setSkills] = useState<Skill[]>([
-    { 
-      id: 'web_search', 
-      name: 'BÚSQUEDA WEB', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Exploración de datos e indexación global en tiempo real a través de las antenas satelitales cuánticas de NIM.', 
-      callCount: 14 
-    },
-    { 
-      id: 'file_sys', 
-      name: 'SISTEMA LOCAL', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Acceso seguro al directorio real de la aplicación, análisis de código fuente y conteo de líneas de software.', 
-      callCount: 8 
-    },
-    { 
-      id: 'home_auto', 
-      name: 'DOMÓTICA IoT', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Control de la red eléctrica, iluminación, ventiladores y el blindaje deflector del laboratorio operativo.', 
-      callCount: 4 
-    },
-    { 
-      id: 'vision_ai', 
-      name: 'SISTEMA VISUAL', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Análisis biométrico facial de intrusos y control espectral de cámaras ópticas de seguridad.', 
-      callCount: 22 
-    },
-    { 
-      id: 'weather_api', 
-      name: 'GEO-TIEMPO', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Consulta barométrica, humedad y telemetría atmosférica local administrada por satélites NIM.', 
-      callCount: 5 
-    },
-    { 
-      id: 'math_tool', 
-      name: 'CÁLCULO ALGO', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Evaluaciones físicas vectoriales, trayectorias térmicas de reactor y simulación de flujos cuánticos.', 
-      callCount: 12 
-    },
-    { 
-      id: 'self_improve', 
-      name: 'AUTOMEJORA', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Matriz cognitiva agéntica auto-mejorable que programa, compila y añade nuevas habilidades de software en caliente.', 
-      callCount: 3 
-    },
-    { 
-      id: 'orchestrator', 
-      name: 'ORQUESTADOR', 
-      status: 'Activa', 
-      isEnabled: true, 
-      description: 'Terminal emuladora del bucle cerrado ReAct (Claude Code/Antigravity) para secuenciar múltiples llamadas agénticas.', 
-      callCount: 7 
-    },
-  ]);
+  // Connected Skills State — cargadas dinámicamente desde Hermes
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+
+  // Cargar skills reales desde Hermes
+  useEffect(() => {
+    fetch('/api/hermes/skills')
+      .then(r => r.json())
+      .then(d => {
+        const mapped: Skill[] = (d.skills || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          status: s.enabled ? 'Activa' : 'Inactiva',
+          isEnabled: s.enabled,
+          description: s.description,
+          callCount: 0,
+        }));
+        setSkills(mapped);
+        setSkillsLoading(false);
+      })
+      .catch(() => setSkillsLoading(false));
+  }, []);
 
   const [selectedSkillId, setSelectedSkillId] = useState<string>('web_search');
 
