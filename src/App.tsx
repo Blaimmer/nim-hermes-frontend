@@ -2458,8 +2458,8 @@ export default function App() {
                 </div>
               </header>
 
-              {/* Grid of skills list switcher */}
-              <div className="grid grid-cols-2 gap-1 text-xs font-mono mb-2 shrink-0">
+              {/* Grid of skills list switcher — scrollable */}
+              <div className="grid grid-cols-2 gap-1 text-xs font-mono mb-2 max-h-[200px] overflow-y-auto custom-scrollbar pr-0.5">
                 {skills.map((skill) => {
                   const isSelect = skill.id === selectedSkillId;
                   return (
