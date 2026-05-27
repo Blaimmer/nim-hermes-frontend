@@ -966,16 +966,60 @@ app.post('/api/agent/stream', async (req, res) => {
 
 import fs from 'fs';
 
-// Modelos disponibles en Hermes (los que el usuario puede elegir)
-const ALL_HERMES_MODELS = [
+interface HermesModel {
+  id: string;
+  name: string;
+  provider: string;
+  description: string;
+  strengths: string;
+  custom?: boolean;
+}
+
+// Catálogo completo de modelos que Hermes soporta
+const BUILTIN_MODELS: HermesModel[] = [
+  // DeepSeek
   { id: 'deepseek-v4-pro',    name: 'DeepSeek V4 Pro',     provider: 'deepseek',  description: 'Razonamiento lógico superior, precio ultra bajo',       strengths: 'lógica, código, JSON' },
-  { id: 'deepseek-chat',      name: 'DeepSeek Chat',       provider: 'deepseek',  description: 'Balance velocidad/calidad, excelente para tareas diarias', strengths: 'balance, rápido, barato' },
-  { id: 'gemini-2.5-flash',   name: 'Gemini 2.5 Flash',    provider: 'gemini',    description: 'Google — gratuito, 1500 req/día, búsqueda integrada',      strengths: 'gratis, búsqueda, rápido' },
-  { id: 'gemini-2.5-pro',     name: 'Gemini 2.5 Pro',      provider: 'gemini',    description: 'Google — potente, contexto 1M tokens, multimodal',          strengths: 'contexto, visión, razonamiento' },
-  { id: 'claude-sonnet-4',    name: 'Claude Sonnet 4',     provider: 'anthropic', description: 'Prosa impecable, código avanzado, razonamiento profundo',  strengths: 'redacción, código, análisis' },
-  { id: 'claude-opus-4',      name: 'Claude Opus 4',       provider: 'anthropic', description: 'Máxima calidad Anthropic, tareas complejas',              strengths: 'élite, creatividad, profundidad' },
-  { id: 'gpt-4.1',            name: 'GPT-4.1',             provider: 'openai',    description: 'OpenAI — versátil, amplio conocimiento general',            strengths: 'general, versátil, rápido' },
+  { id: 'deepseek-chat',      name: 'DeepSeek Chat',       provider: 'deepseek',  description: 'Balance velocidad/calidad, tareas diarias',              strengths: 'balance, rápido, barato' },
+  // Google Gemini
+  { id: 'gemini-2.5-flash',   name: 'Gemini 2.5 Flash',    provider: 'gemini',    description: 'Gratuito (1500 req/día), búsqueda integrada',            strengths: 'gratis, búsqueda, rápido' },
+  { id: 'gemini-2.5-pro',     name: 'Gemini 2.5 Pro',      provider: 'gemini',    description: 'Contexto 1M tokens, multimodal',                          strengths: 'contexto, visión, razonamiento' },
+  // Anthropic Claude
+  { id: 'claude-sonnet-4',    name: 'Claude Sonnet 4',     provider: 'anthropic', description: 'Prosa impecable, código avanzado',                       strengths: 'redacción, código, análisis' },
+  { id: 'claude-opus-4',      name: 'Claude Opus 4',       provider: 'anthropic', description: 'Máxima calidad, tareas complejas',                      strengths: 'élite, creatividad, profundidad' },
+  // OpenAI
+  { id: 'gpt-4.1',            name: 'GPT-4.1',             provider: 'openai',    description: 'Versátil, amplio conocimiento general',                  strengths: 'general, versátil, rápido' },
+  { id: 'gpt-4.1-mini',       name: 'GPT-4.1 Mini',        provider: 'openai',    description: 'Rápido y económico, tareas simples',                     strengths: 'barato, rápido, eficiente' },
+  // OpenRouter (acceso a 300+ modelos)
+  { id: 'openrouter/auto',    name: 'OpenRouter (Auto)',   provider: 'openrouter',description: 'Auto-selecciona el mejor modelo según la tarea',         strengths: 'automático, 300+ modelos, flexible' },
+  // xAI Grok
+  { id: 'grok-4',             name: 'Grok 4',              provider: 'xai',       description: 'xAI — rápido, con acceso a X/Twitter en tiempo real',   strengths: 'X/Twitter, rápido, actualidad' },
+  // Mistral
+  { id: 'mistral-large',      name: 'Mistral Large',       provider: 'mistral',   description: 'Europeo, excelente razonamiento multilingüe',            strengths: 'privacidad, multilingüe, rápido' },
+  // Meta Llama (via OpenRouter o Together)
+  { id: 'meta-llama-4',       name: 'Llama 4 (Meta)',      provider: 'openrouter',description: 'Open source de Meta — potente y gratuito (OpenRouter)',  strengths: 'open source, gratuito, versátil' },
+  // Cohere
+  { id: 'command-r-plus',     name: 'Command R+ (Cohere)', provider: 'cohere',    description: 'Especializado en RAG y enterprise search',               strengths: 'RAG, enterprise, búsqueda' },
 ];
+
+// Archivo de modelos custom (agregados por el usuario)
+const CUSTOM_MODELS_PATH = path.join(process.cwd(), '.hermes-custom-models.json');
+
+function loadCustomModels(): HermesModel[] {
+  try {
+    if (fs.existsSync(CUSTOM_MODELS_PATH)) {
+      return JSON.parse(fs.readFileSync(CUSTOM_MODELS_PATH, 'utf-8'));
+    }
+  } catch (e) {}
+  return [];
+}
+
+function saveCustomModels(models: HermesModel[]) {
+  fs.writeFileSync(CUSTOM_MODELS_PATH, JSON.stringify(models, null, 2), 'utf-8');
+}
+
+function getAllModels(): HermesModel[] {
+  return [...BUILTIN_MODELS, ...loadCustomModels()];
+}
 
 // Archivo de preferencias (qué 3 modelos mostrar en los botones rápidos)
 const MODEL_PREFS_PATH = path.join(process.cwd(), '.hermes-model-prefs.json');
@@ -993,16 +1037,17 @@ function saveModelPrefs(prefs: { active: string; quickModels: string[] }) {
   fs.writeFileSync(MODEL_PREFS_PATH, JSON.stringify(prefs, null, 2), 'utf-8');
 }
 
-// Listar todos los modelos disponibles
+// Listar todos los modelos disponibles (builtin + custom)
 app.get('/api/hermes/models', (req, res) => {
   const prefs = loadModelPrefs();
-  res.json({ models: ALL_HERMES_MODELS, active: prefs.active, quickModels: prefs.quickModels });
+  res.json({ models: getAllModels(), active: prefs.active, quickModels: prefs.quickModels });
 });
 
 // Cambiar modelo activo
 app.post('/api/hermes/switch-model', (req, res) => {
   const { modelId } = req.body;
-  const model = ALL_HERMES_MODELS.find(m => m.id === modelId);
+  const allModels = getAllModels();
+  const model = allModels.find(m => m.id === modelId);
   if (!model) return res.status(400).json({ error: 'Modelo no encontrado' });
   
   const prefs = loadModelPrefs();
@@ -1018,7 +1063,8 @@ app.post('/api/hermes/config-quick-models', (req, res) => {
   if (!Array.isArray(quickModels) || quickModels.length !== 3) {
     return res.status(400).json({ error: 'Se requieren exactamente 3 modelos' });
   }
-  const valid = quickModels.every((id: string) => ALL_HERMES_MODELS.some(m => m.id === id));
+  const allModels = getAllModels();
+  const valid = quickModels.every((id: string) => allModels.some(m => m.id === id));
   if (!valid) return res.status(400).json({ error: 'Uno o más modelos no son válidos' });
   
   const prefs = loadModelPrefs();
@@ -1028,10 +1074,179 @@ app.post('/api/hermes/config-quick-models', (req, res) => {
   res.json({ success: true, quickModels });
 });
 
+// Agregar modelo custom con API key (soporta cualquier provider Hermes)
+app.post('/api/hermes/add-model', async (req, res) => {
+  const { name, modelId, provider, apiKey } = req.body;
+  
+  if (!name || !modelId || !provider || !apiKey) {
+    return res.status(400).json({ error: 'Faltan campos: name, modelId, provider, apiKey' });
+  }
+
+  // Validar que el ID no exista ya
+  const allModels = getAllModels();
+  if (allModels.some(m => m.id === modelId)) {
+    return res.status(400).json({ error: 'Ya existe un modelo con ese ID' });
+  }
+
+  // Guardar API key como variable de entorno según provider
+  const providerUpper = provider.toUpperCase();
+  const envKey = `${providerUpper}_API_KEY`;
+  
+  // Testear la conexión antes de guardar
+  let testOk = false;
+  try {
+    testOk = await testModelConnection(provider, modelId, apiKey);
+  } catch (e: any) {
+    return res.status(400).json({ error: `Error al probar conexión: ${e.message}` });
+  }
+
+  if (!testOk) {
+    return res.status(400).json({ error: 'La API key no es válida o el modelo no responde' });
+  }
+
+  // Guardar API key en ~/.hermes/.env
+  const hermesEnvPath = path.join(os.homedir(), '.hermes', '.env');
+  try {
+    let envContent = '';
+    if (existsSync(hermesEnvPath)) {
+      envContent = fs.readFileSync(hermesEnvPath, 'utf-8');
+    }
+    // Reemplazar o agregar la key
+    const regex = new RegExp(`^${envKey}=.*$`, 'm');
+    if (regex.test(envContent)) {
+      envContent = envContent.replace(regex, `${envKey}=${apiKey}`);
+    } else {
+      envContent += `\n${envKey}=${apiKey}`;
+    }
+    fs.writeFileSync(hermesEnvPath, envContent.trim() + '\n', 'utf-8');
+    process.env[envKey] = apiKey; // cargar en proceso actual
+  } catch (e: any) {
+    return res.status(500).json({ error: `Error guardando API key: ${e.message}` });
+  }
+
+  // Guardar modelo custom
+  const customModels = loadCustomModels();
+  const newModel: HermesModel = {
+    id: modelId,
+    name,
+    provider,
+    description: `Custom — ${provider}`,
+    strengths: 'personalizado',
+    custom: true,
+  };
+  customModels.push(newModel);
+  saveCustomModels(customModels);
+
+  res.json({ success: true, model: newModel, message: `Modelo ${name} agregado y API key verificada` });
+});
+
+// Testear conexión de un modelo
+app.post('/api/hermes/test-model', async (req, res) => {
+  const { provider, modelId, apiKey } = req.body;
+  if (!provider || !modelId || !apiKey) {
+    return res.status(400).json({ error: 'Faltan campos: provider, modelId, apiKey' });
+  }
+  
+  try {
+    const ok = await testModelConnection(provider, modelId, apiKey);
+    res.json({ success: ok, message: ok ? 'Conexión exitosa' : 'Falló la conexión' });
+  } catch (e: any) {
+    res.json({ success: false, message: e.message });
+  }
+});
+
+// Eliminar modelo custom
+app.delete('/api/hermes/remove-model/:id', (req, res) => {
+  const modelId = req.params.id;
+  const customModels = loadCustomModels();
+  const index = customModels.findIndex(m => m.id === modelId);
+  
+  if (index === -1) {
+    return res.status(404).json({ error: 'Modelo custom no encontrado' });
+  }
+  
+  customModels.splice(index, 1);
+  saveCustomModels(customModels);
+  
+  res.json({ success: true, message: `Modelo "${modelId}" eliminado` });
+});
+
+// Función que prueba la conexión a un modelo
+async function testModelConnection(provider: string, modelId: string, apiKey: string): Promise<boolean> {
+  const testMessage = [{ role: 'user', content: 'Responde solo: OK' }];
+  
+  const endpoints: Record<string, { url: string; headers: Record<string, string>; body: (m: string) => any }> = {
+    deepseek: {
+      url: 'https://api.deepseek.com/v1/chat/completions',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: (m) => ({ model: m, messages: testMessage, max_tokens: 5 }),
+    },
+    openai: {
+      url: 'https://api.openai.com/v1/chat/completions',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: (m) => ({ model: m, messages: testMessage, max_tokens: 5 }),
+    },
+    anthropic: {
+      url: 'https://api.anthropic.com/v1/messages',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: (m) => ({ model: m, messages: testMessage, max_tokens: 5 }),
+    },
+    gemini: {
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
+      headers: { 'Content-Type': 'application/json' },
+      body: () => ({ contents: [{ parts: [{ text: 'Responde solo: OK' }] }] }),
+    },
+    openrouter: {
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: (m) => ({ model: m, messages: testMessage, max_tokens: 5 }),
+    },
+    xai: {
+      url: 'https://api.x.ai/v1/chat/completions',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: (m) => ({ model: m, messages: testMessage, max_tokens: 5 }),
+    },
+    mistral: {
+      url: 'https://api.mistral.ai/v1/chat/completions',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: (m) => ({ model: m, messages: testMessage, max_tokens: 5 }),
+    },
+    cohere: {
+      url: 'https://api.cohere.ai/v2/chat',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: (m) => ({ model: m, messages: testMessage }),
+    },
+  };
+
+  const cfg = endpoints[provider];
+  if (!cfg) {
+    // Provider desconocido: intentar formato OpenAI-compatible genérico
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: modelId, messages: testMessage, max_tokens: 5 }),
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
+  try {
+    const res = await fetch(cfg.url, {
+      method: 'POST',
+      headers: cfg.headers,
+      body: JSON.stringify(cfg.body(modelId)),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Métricas reales de la API (balance DeepSeek + uso local)
 app.get('/api/hermes/quota', async (req, res) => {
   const prefs = loadModelPrefs();
-  const activeModel = ALL_HERMES_MODELS.find(m => m.id === prefs.active);
+  const activeModel = getAllModels().find(m => m.id === prefs.active);
   
   let deepseekBalance: any = null;
   const deepseekKey = process.env.DEEPSEEK_API_KEY;

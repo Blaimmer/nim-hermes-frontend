@@ -6,6 +6,7 @@ export interface HermesModel {
   provider: string;
   description: string;
   strengths: string;
+  custom?: boolean;
 }
 
 export interface LogEntry {

@@ -30,7 +30,8 @@ import {
   ChevronRight,
   MessageSquare,
   HelpCircle,
-  Hash
+  Hash,
+  Plus
 } from 'lucide-react';
 import { SystemStatus, LogEntry, ChatMessage, Skill, Stats, HermesModel } from './types';
 
@@ -47,6 +48,16 @@ export default function App() {
   const [showModelSettings, setShowModelSettings] = useState<boolean>(false);
   const [tempQuickSelection, setTempQuickSelection] = useState<string[]>(['deepseek-v4-pro', 'gemini-2.5-flash', 'claude-sonnet-4']);
   const [status, setStatus] = useState<SystemStatus>('STANDBY');
+
+  // Custom model form state
+  const [customModelName, setCustomModelName] = useState('');
+  const [customModelId, setCustomModelId] = useState('');
+  const [customModelProvider, setCustomModelProvider] = useState('openrouter');
+  const [customModelApiKey, setCustomModelApiKey] = useState('');
+  const [customModelTestResult, setCustomModelTestResult] = useState<{ok: boolean; message: string} | null>(null);
+  const [customModelAdding, setCustomModelAdding] = useState(false);
+  const [customModelTesting, setCustomModelTesting] = useState(false);
+  const [customModelDeleting, setCustomModelDeleting] = useState<string | null>(null);
 
   // Server-side audited system information state
   const [serverSysInfo, setServerSysInfo] = useState<{
@@ -1450,6 +1461,40 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {model.custom && (
+                        <button
+                          type="button"
+                          disabled={customModelDeleting === model.id}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!confirm(`¿Eliminar modelo "${model.name}"?`)) return;
+                            setCustomModelDeleting(model.id);
+                            try {
+                              const res = await fetch(`/api/hermes/remove-model/${encodeURIComponent(model.id)}`, { method: 'DELETE' });
+                              if (res.ok) {
+                                setModelsList(prev => prev.filter(m => m.id !== model.id));
+                                setTempQuickSelection(prev => prev.filter(id => id !== model.id));
+                                addLog('system', `Modelo custom "${model.name}" eliminado.`);
+                              } else {
+                                const err = await res.json();
+                                addLog('system', `Error al eliminar: ${err.error || 'Desconocido'}`);
+                              }
+                            } catch (e: any) {
+                              addLog('system', `Error al eliminar modelo: ${e.message}`);
+                            } finally {
+                              setCustomModelDeleting(null);
+                            }
+                          }}
+                          className="text-red-500 hover:text-red-300 hover:bg-red-950/40 p-0.5 rounded transition"
+                          title={`Eliminar ${model.name}`}
+                        >
+                          {customModelDeleting === model.id ? (
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      )}
                       {!modelHasKey && <span className="text-[7.5px] text-red-500 font-mono">⚠ SIN KEY</span>}
                       {isSelected ? (
                         <CheckCircle2 className="w-4 h-4 text-amber-400" />
@@ -1460,6 +1505,152 @@ export default function App() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* ── FORMULARIO AGREGAR MODELO CUSTOM ── */}
+            <div className="px-4 pb-2">
+              <div className="border-t border-cyan-900/50 pt-3 mb-3">
+                <h3 className="text-[10px] font-mono font-bold tracking-wider text-cyan-400 uppercase flex items-center gap-1.5 mb-3">
+                  <Plus className="w-3.5 h-3.5" />
+                  AGREGAR MODELO CUSTOM
+                </h3>
+
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Nombre del modelo (ej: Mi Claude Custom)"
+                    value={customModelName}
+                    onChange={(e) => setCustomModelName(e.target.value)}
+                    className="w-full bg-black/50 border border-cyan-900/60 text-cyan-200 text-[10px] font-mono p-2 rounded placeholder:text-cyan-700 focus:border-cyan-500 focus:outline-none transition"
+                  />
+                  <input
+                    type="text"
+                    placeholder="ID del modelo (ej: openrouter/anthropic/claude-sonnet-4)"
+                    value={customModelId}
+                    onChange={(e) => setCustomModelId(e.target.value)}
+                    className="w-full bg-black/50 border border-cyan-900/60 text-cyan-200 text-[10px] font-mono p-2 rounded placeholder:text-cyan-700 focus:border-cyan-500 focus:outline-none transition"
+                  />
+                  <select
+                    value={customModelProvider}
+                    onChange={(e) => setCustomModelProvider(e.target.value)}
+                    className="w-full bg-black/50 border border-cyan-900/60 text-cyan-200 text-[10px] font-mono p-2 rounded focus:border-cyan-500 focus:outline-none transition"
+                  >
+                    {['openrouter', 'openai', 'anthropic', 'deepseek', 'gemini', 'xai', 'mistral', 'cohere', 'custom'].map(p => (
+                      <option key={p} value={p} className="bg-[#020b12] text-cyan-200">{p.toUpperCase()}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="password"
+                    placeholder="API Key"
+                    value={customModelApiKey}
+                    onChange={(e) => setCustomModelApiKey(e.target.value)}
+                    className="w-full bg-black/50 border border-cyan-900/60 text-cyan-200 text-[10px] font-mono p-2 rounded placeholder:text-cyan-700 focus:border-cyan-500 focus:outline-none transition"
+                  />
+
+                  {/* Test result */}
+                  {customModelTestResult && (
+                    <div className={`flex items-center gap-1.5 text-[9px] font-mono p-1.5 rounded border ${
+                      customModelTestResult.ok
+                        ? 'text-green-400 border-green-900/50 bg-green-950/20'
+                        : 'text-red-400 border-red-900/50 bg-red-950/20'
+                    }`}>
+                      {customModelTestResult.ok ? (
+                        <CheckCircle2 className="w-3 h-3 text-green-400" />
+                      ) : (
+                        <XCircle className="w-3 h-3 text-red-400" />
+                      )}
+                      {customModelTestResult.message}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={!customModelProvider || !customModelId || !customModelApiKey || customModelTesting}
+                      onClick={async () => {
+                        setCustomModelTesting(true);
+                        setCustomModelTestResult(null);
+                        try {
+                          const res = await fetch('/api/hermes/test-model', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ provider: customModelProvider, modelId: customModelId, apiKey: customModelApiKey }),
+                          });
+                          const data = await res.json();
+                          setCustomModelTestResult({ ok: data.success, message: data.message || (data.success ? 'Conexión exitosa' : 'Falló la conexión') });
+                        } catch (e: any) {
+                          setCustomModelTestResult({ ok: false, message: `Error: ${e.message}` });
+                        } finally {
+                          setCustomModelTesting(false);
+                        }
+                      }}
+                      className={`flex-1 border py-2 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1 ${
+                        customModelProvider && customModelId && customModelApiKey && !customModelTesting
+                          ? 'bg-cyan-950/50 hover:bg-cyan-900 border-cyan-700 text-cyan-300'
+                          : 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed'
+                      }`}
+                    >
+                      {customModelTesting ? (
+                        <RotateCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Activity className="w-3 h-3" />
+                      )}
+                      Testear Conexión
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!customModelName || !customModelId || !customModelProvider || !customModelApiKey || customModelAdding}
+                      onClick={async () => {
+                        setCustomModelAdding(true);
+                        try {
+                          const res = await fetch('/api/hermes/add-model', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              name: customModelName,
+                              modelId: customModelId,
+                              provider: customModelProvider,
+                              apiKey: customModelApiKey,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (res.ok) {
+                            addLog('system', `Modelo "${customModelName}" agregado exitosamente.`);
+                            setCustomModelName('');
+                            setCustomModelId('');
+                            setCustomModelApiKey('');
+                            setCustomModelTestResult(null);
+                            // Recargar lista de modelos
+                            const modelsRes = await fetch('/api/hermes/models');
+                            if (modelsRes.ok) {
+                              const mdata = await modelsRes.json();
+                              setModelsList(mdata.models || []);
+                            }
+                          } else {
+                            addLog('system', `Error al agregar modelo: ${data.error || 'Desconocido'}`);
+                          }
+                        } catch (e: any) {
+                          addLog('system', `Error al agregar modelo: ${e.message}`);
+                        } finally {
+                          setCustomModelAdding(false);
+                        }
+                      }}
+                      className={`flex-1 border py-2 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1 ${
+                        customModelName && customModelId && customModelProvider && customModelApiKey && !customModelAdding
+                          ? 'bg-amber-950/50 hover:bg-amber-900 border-amber-700 text-amber-300'
+                          : 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed'
+                      }`}
+                    >
+                      {customModelAdding ? (
+                        <RotateCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Plus className="w-3 h-3" />
+                      )}
+                      Agregar Modelo
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <footer className="p-3 border-t border-amber-900/40 flex gap-2">
