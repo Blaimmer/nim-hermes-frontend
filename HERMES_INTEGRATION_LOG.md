@@ -189,3 +189,40 @@ El usuario reportó que al hacer búsquedas desde el dashboard:
 
 ### Próximo
 Pendiente que el usuario pruebe búsqueda + TTS desde el dashboard
+
+---
+
+## 2026-05-27 — Fase 6: Memoria a Largo Plazo — Holographic + Obsidian
+
+### Objetivo
+Resolver definitivamente el límite de 2,200 chars de la memoria built-in con dos sistemas complementarios e ilimitados.
+
+### Arquitectura Final de Memoria
+```
+Memoria built-in (2,200 chars) → Solo índice de temas + tags
+    ↓ apunta a
+Holographic Memory (SQLite ilimitado) → Datos vectoriales, hechos, entidades
+    +
+Obsidian Vault (Markdown ilimitado) → Documentación, investigación, notas
+```
+
+### 1. Holographic Memory Activado
+- **Provider:** `memory.provider: holographic`
+- **DB:** `~/.hermes/memory_store.db` (SQLite + FTS5 + HRR vectorial)
+- **Tablas:** facts (5), entities (1), FTS index, memory_banks
+- **Operaciones:** fact_store (add/search/update/delete/probe/reason), fact_feedback
+- **Coste:** GRATIS, 100% local, cero dependencias externas
+- **NumPy:** disponible para álgebra HRR vectorial
+
+### 2. Obsidian Knowledge Base
+- **Vault:** `~/obsidian-hermes/`
+- **Variable:** `OBSIDIAN_VAULT_PATH=/home/clawd/obsidian-hermes`
+- **Skill:** `obsidian` — ya instalada en Hermes
+- **Notas creadas:** Índice (00 - Indice.md), NIM Dashboard.md
+- **Búsqueda:** `search_files` con FTS en todo el vault
+
+### Verificación
+- ✅ Holographic activo y funcional (5 hechos migrados)
+- ✅ DB creada con FTS5 y entidades
+- ✅ Obsidian vault creado con índice + nota de proyecto
+- ✅ Búsqueda cross-vault funcional
