@@ -142,3 +142,50 @@ Dashboard → GET /api/hermes/models → lista completa (13 builtin + custom)
 - ✅ Balance DeepSeek consultado en tiempo real
 - ✅ TypeScript compila sin errores
 - ✅ GitHub backup: commits 4fe8437, c3c52e8, e1b2b7e
+
+---
+
+## 2026-05-27 — Fase 5: Motor de Búsqueda + TTS Robustez
+
+### Diagnóstico
+El usuario reportó que al hacer búsquedas desde el dashboard:
+1. La búsqueda demoraba mucho (motor por defecto: DuckDuckGo Lite)
+2. El resultado aparecía en texto pero el TTS no vocalizaba
+3. Tuvo que intervenir manualmente para que Hermes respondiera
+
+### Causa raíz TTS
+- `lastSpokenRef` no se reseteaba correctamente entre frases, bloqueando `speakText`
+- Los checks `isMuted || ttsMuted || !speechSynthesis` estaban juntos — fallo silencioso
+- Sin logs de debug para diagnosticar
+
+### Causa raíz búsqueda
+- Hermes usaba DuckDuckGo Lite (lento, scraping HTML)
+- No había Tavily configurado a pesar de estar en el proyecto original
+
+### Cambios Realizados
+
+#### 1. Tavily como motor principal de búsqueda
+- **API Key:** tvly-dev-xxx configurada en `~/.hermes/.env` y `.env` del proyecto
+- **Config Hermes:** `web.search_backend: tavily`
+- **Verificación:** API key testeada — 2 resultados en <2s
+- **Cadena de fallback:** Tavily → DuckDuckGo Lite (automático en Hermes)
+
+#### 2. TTS más robusto (src/App.tsx - speakText)
+- **lastSpokenRef:** se resetea en cada llamada en vez de comparar
+- **Validación:** texto vacío se detecta y loguea
+- **Separación de checks:** mute, ttsMuted y speechSynthesis se validan independientemente
+- **Logs:** `console.log('[TTS] ...')` en cada punto de decisión
+- **Status/Orb:** solo se modifican en caso de mute, no bloquean el flujo
+
+#### 3. Reinicio de servicios
+- Hermes Gateway reiniciado para cargar config de búsqueda
+- NIM Dev Server reiniciado para cargar .env actualizado
+
+### Verificación
+- ✅ Tavily API key funcional (test directo a api.tavily.com)
+- ✅ Hermes web.search_backend configurado
+- ✅ Gateway + Dashboard ambos respondiendo 200
+- ✅ Commit: d3aae55 (TTS fix)
+
+### Próximo
+Pendiente que el usuario pruebe búsqueda + TTS desde el dashboard
