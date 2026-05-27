@@ -92,7 +92,8 @@ Pendiente que el usuario pruebe el micrófono desde Chrome en la URL HTTPS.
 | TTS (voz de respuesta) | ✅ | Web Speech API |
 | Talkmode (wake word "NIM") | ✅ | Recreado con createSpeechRecognition |
 | Streaming en tiempo real | ✅ | SSE vía /api/agent/stream, muletillas conversacionales |
-| Selector de proveedor | ⚠️ | Ignorado; Hermes usa DeepSeek |
+| TTS progresivo por frases | ✅ | speakNewPhrases con detección de cortes naturales |
+| Motor cognitivo (modelos) | ✅ | 13 builtin + custom, switch, métricas reales |
 | Panel de skills | ❓ | Pendiente |
 | Sistema de logs | ❓ | Pendiente |
 | Búsqueda web | ❓ | Pendiente |
@@ -100,42 +101,44 @@ Pendiente que el usuario pruebe el micrófono desde Chrome en la URL HTTPS.
 
 ---
 
-## 2026-05-27 — Fase 3: Streaming y Conversación Natural (Muletillas)
+## 2026-05-27 — Fase 4: Motor Cognitivo — Selector Dinámico de Modelos
 
 ### Objetivo
-Que la conversación se sienta viva mientras Hermes procesa tareas. En vez de pantalla en blanco hasta la respuesta final, el texto aparece palabra por palabra en tiempo real.
+Selector de proveedor funcional con métricas reales, cambio de modelo con confirmación, y capacidad de agregar cualquier modelo que Hermes soporte con su API key.
 
 ### Arquitectura
 ```
-Frontend (fetch + ReadableStream)
-    → POST /api/agent/stream (SSE)
-        → POST /v1/chat/completions (stream:true)
-            → Hermes Agent (DeepSeek + tools)
+Dashboard → GET /api/hermes/models → lista completa (13 builtin + custom)
+         → POST /api/hermes/switch-model → cambia modelo activo
+         → GET /api/hermes/quota → balance DeepSeek real + keys detectadas
+         → POST /api/hermes/add-model → registra custom con test de conexión
+         → POST /api/hermes/set-key → configura API key para modelo existente
 ```
 
-### Cambios Realizados
+### Backend: 7 endpoints nuevos (server.ts)
+| Endpoint | Método | Función |
+|----------|--------|---------|
+| /api/hermes/models | GET | Lista modelos + activo + quickModels |
+| /api/hermes/switch-model | POST | Cambia modelo activo |
+| /api/hermes/config-quick-models | POST | Configura 3 botones rápidos |
+| /api/hermes/add-model | POST | Agrega custom, testea y guarda API key |
+| /api/hermes/test-model | POST | Prueba conexión a cualquier provider |
+| /api/hermes/remove-model/:id | DELETE | Elimina modelo custom |
+| /api/hermes/set-key | POST | Configura API key para modelo existente |
+| /api/hermes/quota | GET | Métricas reales (balance, keys) |
 
-#### 1. Nuevo endpoint SSE en server.ts
-- **Archivo:** `server.ts`
-- **Ruta:** `POST /api/agent/stream`
-- **Funcionamiento:** Proxy SSE que reenvía los chunks de Hermes al frontend
-- **Eventos:** `start`, `chunk` (cada palabra), `done` (respuesta completa), `error`
-
-#### 2. Frontend con streaming en tiempo real
-- **Archivo:** `src/App.tsx` — función `submitPrompt`
-- **Antes:** `fetch('/api/agent')` → espera respuesta completa → muestra de golpe
-- **Después:** `fetch('/api/agent/stream')` → lee ReadableStream → actualiza mensaje palabra por palabra
-- **Placeholder:** Aparece "● Procesando..." al inicio y se va llenando
-- **Fallback:** Si el streaming falla, automáticamente usa el endpoint no-streaming
-- **Tipo:** Agregado `streaming?: boolean` a `ChatMessage` en `types.ts`
-
-#### 3. Efecto "muletilla" conversacional
-- Hermes naturalmente escribe mientras piensa/ejecuta herramientas
-- El usuario ve el texto aparecer en tiempo real — "estoy buscando...", "casi tengo el informe...", etc.
-- Sin cambios en el prompt de Hermes ni en el diseño visual
+### Frontend: 3 botones + ⚙️ modal completo
+- **3 botones rápidos**: cargados dinámicamente, modelos sin key atenuados pero clickeables
+- **⚙️ Modal**: lista de TODOS los modelos (13+), seleccionar 3 para botones rápidos
+- **Modelos sin key**: clic expande mini-formulario inline con Testear/Guardar/Cancelar
+- **➕ Agregar Custom**: formulario con nombre, ID, provider (dropdown 9 opciones), API key
+- **Popup de cuotas**: balance DeepSeek real, estado de cada API key, modelo activo
 
 ### Verificación
-- ✅ SSE streaming end-to-end: Hermes → server.ts → frontend
+- ✅ 13 modelos built-in disponibles
+- ✅ Switch de modelo funcional con confirmación
+- ✅ Custom models: add, test, remove
+- ✅ API keys persistidas en archivo env
+- ✅ Balance DeepSeek consultado en tiempo real
 - ✅ TypeScript compila sin errores
-- ✅ Fallback automático a no-streaming si falla
-- ✅ El placeholder "● Procesando..." se reemplaza en vivo
+- ✅ GitHub backup: commits 4fe8437, c3c52e8, e1b2b7e
