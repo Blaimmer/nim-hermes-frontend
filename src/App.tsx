@@ -2355,6 +2355,7 @@ export default function App() {
                     <p className="text-green-400 font-bold text-[8px] tracking-widest uppercase mb-0.5">OBSERVACION RETORNADA (CUERPO):</p>
                     <p className="text-green-100">{activeToolCall.observation}</p>
                   </div>
+                )}
               </div>
             </section>
           )}
