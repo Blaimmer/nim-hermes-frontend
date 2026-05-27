@@ -743,10 +743,11 @@ export default function App() {
               setChatMessages(prev => prev.map(m =>
                 m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
               ));
-              setStatus('STANDBY');
-              setOrbState('idle');
               addLog('response', `HERMES: "${accumulatedContent.slice(0, 100)}..."`);
-              speakText(accumulatedContent);
+              // Limpiar lastSpokenRef para evitar bloqueo de TTS
+              lastSpokenRef.current = '';
+              // Pequeña pausa para que React procese el estado antes del TTS
+              setTimeout(() => speakText(accumulatedContent), 50);
               return;
             } else if (event.type === 'error') {
               throw new Error(event.message);
@@ -761,10 +762,9 @@ export default function App() {
       setChatMessages(prev => prev.map(m =>
         m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
       ));
-      setStatus('STANDBY');
-      setOrbState('idle');
       if (accumulatedContent) {
-        speakText(accumulatedContent);
+        lastSpokenRef.current = '';
+        setTimeout(() => speakText(accumulatedContent), 50);
       }
     } catch (e: any) {
       console.error('Streaming falló, usando fallback no-streaming:', e.message);
