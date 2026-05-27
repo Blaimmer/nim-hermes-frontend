@@ -1,0 +1,306 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Share Tech Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --glow-cyan: #00f2ff;
+  --glow-gold: #ffcc00;
+  --glow-red: #ff3b30;
+  --glow-green: #34c759;
+  --bg-dark: #020609;
+  --panel-bg: rgba(6, 17, 28, 0.75);
+  --border-color: rgba(0, 242, 255, 0.25);
+  --border-color-glow: rgba(0, 242, 255, 0.6);
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-dark);
+  color: var(--glow-cyan);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100vh;
+}
+
+/* Scanline visual styling */
+.scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: rgba(0, 242, 255, 0.08);
+  animation: scan 10s linear infinite;
+  pointer-events: none;
+  z-index: 40;
+}
+
+@keyframes scan {
+  0% { top: -10px; }
+  100% { top: 100%; }
+}
+
+/* Ambient glow system */
+.glow-text {
+  text-shadow: 0 0 8px rgba(0, 242, 255, 0.6);
+}
+
+.glow-text-gold {
+  text-shadow: 0 0 10px rgba(255, 204, 0, 0.6);
+}
+
+.glow-text-red {
+  text-shadow: 0 0 10px rgba(255, 59, 48, 0.6);
+}
+
+.glow-border {
+  box-shadow: 0 0 15px rgba(0, 242, 255, 0.15);
+}
+
+.panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 0 15px rgba(0, 242, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.panel:hover {
+  border-color: var(--border-color-glow);
+  box-shadow: 0 0 20px rgba(0, 242, 255, 0.12);
+}
+
+/* Custom aesthetic scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(2, 6, 9, 0.5);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 242, 255, 0.3);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 242, 255, 0.6);
+}
+
+/* Arc Core React Engine */
+.arc-core {
+  width: 170px;
+  height: 170px;
+  @media (min-height: 700px) {
+    width: 200px;
+    height: 200px;
+  }
+  @media (min-height: 850px) {
+    width: 250px;
+    height: 250px;
+  }
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid var(--glow-cyan);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, border-color, box-shadow;
+}
+
+/* Distinct core states with glow variables */
+.arc-core.standby .ring {
+  border-color: var(--glow-cyan);
+  box-shadow: 0 0 25px rgba(0, 242, 255, 0.25), inset 0 0 20px rgba(0, 242, 255, 0.2);
+}
+
+.arc-core.listening .ring {
+  border-color: var(--glow-gold);
+  box-shadow: 0 0 35px rgba(255, 204, 0, 0.5), inset 0 0 30px rgba(255, 204, 0, 0.35);
+}
+
+.arc-core.thinking .ring {
+  border-color: var(--glow-cyan);
+  box-shadow: 0 0 45px rgba(0, 242, 255, 0.6), inset 0 0 40px rgba(0, 242, 255, 0.45);
+}
+
+.arc-core.speaking .ring {
+  border-color: #00ff88;
+  box-shadow: 0 0 45px rgba(0, 255, 136, 0.5), inset 0 0 40px rgba(0, 255, 136, 0.4);
+}
+
+.arc-core.error .ring {
+  border-color: var(--glow-red);
+  box-shadow: 0 0 35px rgba(255, 59, 48, 0.6), inset 0 0 30px rgba(255, 59, 48, 0.45);
+}
+
+/* Keyframe animations for the Arc segments */
+.ring-1 {
+  width: 100%;
+  height: 100%;
+  border-style: dashed;
+  animation: spin 12s linear infinite;
+  opacity: 0.55;
+}
+
+.ring-2 {
+  width: 82%;
+  height: 82%;
+  border-width: 3px;
+  border-style: dotted;
+  animation: spin-rev 18s linear infinite;
+  opacity: 0.7;
+}
+
+.ring-3 {
+  width: 62%;
+  height: 62%;
+  border-width: 1.5px;
+  border-style: solid;
+  animation: pulse-core 2.5s ease-in-out infinite;
+}
+
+/* State-aware animation rates override for responsive visual pacing */
+.arc-core.standby .ring-1 { animation: spin 20s linear infinite; }
+.arc-core.listening .ring-1 { animation: spin 6s linear infinite; }
+.arc-core.thinking .ring-1 { animation: spin 1.5s linear infinite; }
+.arc-core.speaking .ring-1 { animation: spin 4s linear infinite; }
+.arc-core.error .ring-1 { animation: spin 0.8s linear infinite; }
+
+.arc-core.standby .ring-2 { animation: spin-rev 28s linear infinite; }
+.arc-core.listening .ring-2 { animation: spin-rev 9s linear infinite; }
+.arc-core.thinking .ring-2 { animation: spin-rev 2.2s linear infinite; }
+.arc-core.speaking .ring-2 { animation: spin-rev 6s linear infinite; }
+.arc-core.error .ring-2 { animation: spin-rev 1.2s linear infinite; }
+
+.arc-core.standby .ring-3 { animation: pulse-core 3.5s ease-in-out infinite; }
+.arc-core.listening .ring-3 { animation: pulse-core 1.2s ease-in-out infinite; }
+.arc-core.thinking .ring-3 { animation: pulse-core 0.45s cubic-bezier(0.25, 1, 0.5, 1) infinite; }
+.arc-core.speaking .ring-3 { animation: pulse-core 0.8s ease-in-out infinite; }
+.arc-core.error .ring-3 { animation: pulse-core 0.25s linear infinite; }
+
+.inner-core {
+  width: 42%;
+  height: 42%;
+  background: radial-gradient(circle, #ffffff 10%, #00f2ff 50%, rgba(2, 6, 9, 0.9) 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 35px var(--glow-cyan);
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, background, box-shadow;
+}
+
+.arc-core.listening .inner-core {
+  background: radial-gradient(circle, #ffffff 10%, #ffcc00 60%, rgba(2, 6, 9, 0.9) 100%);
+  box-shadow: 0 0 45px var(--glow-gold);
+}
+
+.arc-core.thinking .inner-core {
+  background: radial-gradient(circle, #ffffff 15%, #00f2ff 60%, rgba(2, 6, 9, 0.9) 100%);
+  box-shadow: 0 0 50px var(--glow-cyan);
+  animation: inner-pulse 0.4s ease-in-out infinite alternate;
+}
+
+.arc-core.speaking .inner-core {
+  background: radial-gradient(circle, #ffffff 10%, #00ff88 60%, rgba(2, 6, 9, 0.9) 100%);
+  box-shadow: 0 0 45px #00ff88;
+  animation: speak-bounce 0.15s ease-in-out infinite alternate;
+}
+
+.arc-core.error .inner-core {
+  background: radial-gradient(circle, #ffffff 10%, var(--glow-red) 60%, rgba(2, 6, 9, 0.9) 100%);
+  box-shadow: 0 0 40px var(--glow-red);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spin-rev {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes pulse-core {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.08); opacity: 0.95; }
+}
+
+@keyframes inner-pulse {
+  from { transform: scale(0.9); filter: brightness(1); }
+  to { transform: scale(1.1); filter: brightness(1.3); }
+}
+
+@keyframes speak-bounce {
+  from { transform: scale(0.92); }
+  to { transform: scale(1.04); }
+}
+
+/* Log categorization styles */
+.log-entry {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  border-left: 2px solid transparent;
+  padding-left: 6px;
+}
+
+.thought-log { color: #8a8a8a; border-color: #555555; }
+.action-log { color: var(--glow-gold); border-color: var(--glow-gold); }
+.observation-log { color: #00ff88; border-color: #00ff88; }
+.response-log { color: #ffffff; border-color: var(--glow-cyan); font-weight: 500; }
+.system-log { color: #52c41a; border-color: #52c41a; }
+.user-log { color: #1890ff; border-color: #1890ff; }
+
+/* Grid decoration aesthetics */
+.grid-lines {
+  background-image: 
+    linear-gradient(to right, rgba(0, 242, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 242, 255, 0.03) 1px, transparent 1px);
+  background-size: 30px 30px;
+}
+
+/* Visualizer audio spectrum bars */
+.bar {
+  display: inline-block;
+  width: 4px;
+  height: 5px;
+  background-color: var(--glow-cyan);
+  margin-right: 2px;
+  transition: height 0.1s ease;
+}
+
+/* Glowing buttons */
+.btn-glow {
+  border: 1px solid var(--border-color);
+  background: rgba(0, 242, 255, 0.04);
+  color: var(--glow-cyan);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-glow:hover:not(:disabled) {
+  background: rgba(0, 242, 255, 0.12);
+  border-color: var(--glow-cyan);
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.3);
+}
+
+.btn-glow.active {
+  background: rgba(0, 242, 255, 0.2);
+  border-color: var(--glow-cyan);
+  box-shadow: 0 0 12px rgba(0, 242, 255, 0.4);
+}

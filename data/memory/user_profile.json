@@ -1,0 +1,25 @@
+{
+  "initialized": true,
+  "infrastructure": {
+    "llmProvider": "openai",
+    "apiKey": "sk-32fb96c8e183407baa1c59070a972eeb",
+    "searchProvider": "tavily",
+    "searchApiKey": "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",
+    "inferenceOk": true,
+    "searchOk": true
+  },
+  "userName": "El Señor Oskr900117",
+  "preferredName": "Señor Oskr900117",
+  "professionalRole": "Ingeniero Principal e Innovador",
+  "mainObjectives": [
+    "Crear el agente AI definitivo con autonomía real en el host",
+    "Integrar sistemas de memoria persistentes de largo plazo y auto-evolución de habilidades"
+  ],
+  "criticalAreasOfFocus": [
+    "Inteligencia Artificial",
+    "React UX",
+    "Model Context Protocol",
+    "Sistemas Operativos y Automatización"
+  ],
+  "created_at": "2026-05-25T16:08:59-05:00"
+}

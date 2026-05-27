@@ -1,0 +1,42 @@
+{
+  "active_servers": [
+    {
+      "id": "google_workspace",
+      "name": "Google Workspace MCP",
+      "status": "connected",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+      "env": {
+        "GD_CLIENT_ID": "mock_client",
+        "GD_CLIENT_SECRET": "mock_secret"
+      }
+    },
+    {
+      "id": "github",
+      "name": "GitHub Repository MCP",
+      "status": "disconnected",
+      "transport": "sse",
+      "url": "https://mcp-server-github.internal/sse",
+      "env": {}
+    },
+    {
+      "id": "tavily",
+      "name": "Tavily Search MCP",
+      "status": "connected",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "tavily-mcp@0.1.3"],
+      "env": {
+        "TAVILY_API_KEY": "process.env.TAVILY_API_KEY"
+      }
+    }
+  ],
+  "discovery_keywords": {
+    "notion": "@modelcontextprotocol/server-notion",
+    "postgres": "@modelcontextprotocol/server-postgres",
+    "jira": "@mcp/jira-bridge",
+    "slack": "@modelcontextprotocol/server-slack",
+    "tavily": "tavily-mcp@0.1.3"
+  }
+}

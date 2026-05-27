@@ -1,0 +1,42 @@
+{
+  "default_provider": "google",
+  "routing_rules": [
+    {
+      "scope": "local_memory",
+      "priority": 1,
+      "description": "Consultele primero la base de datos de largo plazo del motor NIM."
+    },
+    {
+      "scope": "programming_code_markdown",
+      "preferred_provider": "tavily",
+      "priority": 2,
+      "description": "Tavily optimizado para la extracción de documentación clara y limpia de API."
+    },
+    {
+      "scope": "general_facts",
+      "preferred_provider": "google",
+      "priority": 3,
+      "description": "Google Search Grounding para máxima veracidad fáctica."
+    },
+    {
+      "scope": "unreleased_news_trends",
+      "preferred_provider": "perplexity",
+      "priority": 4,
+      "description": "Perplexity API para síntesis cognitiva de noticias en tiempo real."
+    }
+  ],
+  "quotas": {
+    "google": {
+      "limit_rpm": 15,
+      "cost_per_thousand": 0.0
+    },
+    "tavily": {
+      "limit_rpm": 20,
+      "cost_per_thousand": 0.015
+    },
+    "perplexity": {
+      "limit_rpm": 10,
+      "cost_per_thousand": 0.05
+    }
+  }
+}

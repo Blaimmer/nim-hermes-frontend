@@ -1,0 +1,730 @@
+{
+  "workingMemory": {
+    "humanBlock": "Señor Oskr900117, Ingeniero Principal e Innovador.",
+    "personaBlock": "NIM: Intelecto refinado, diplomático con sesgos de proactividad y rigor técnico.",
+    "taskBlock": "Evolucionando la matriz lógica hacia la especificación agéntica 2026.",
+    "lastUpdated": "2026-05-25T16:40:39.751Z"
+  },
+  "ltm": {
+    "memories": [
+      {
+        "id": "mem_mplfxrfkblgk",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T16:48:47.648Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplfxx7sojr3",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T16:48:55.144Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplfyapbxb4n",
+        "content": "hola buenos dias",
+        "vectorKeywords": [
+          "hola",
+          "buenos",
+          "dias"
+        ],
+        "timestamp": "2026-05-25T16:49:12.624Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplg4vi8bnjd",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T16:54:19.520Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplg58jrkd8l",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T16:54:36.423Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplg5gsfm74m",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T16:54:47.103Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljhsdl472q",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T18:28:20.841Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljj6q98jd9",
+        "content": "estas funcional ?",
+        "vectorKeywords": [
+          "estas",
+          "funcional"
+        ],
+        "timestamp": "2026-05-25T18:29:26.097Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljktlz5cyg",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T18:30:42.407Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljl49jk7j3",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T18:30:56.215Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljms9oqv50",
+        "content": "hola buenas tardes",
+        "vectorKeywords": [
+          "hola",
+          "buenas",
+          "tardes"
+        ],
+        "timestamp": "2026-05-25T18:32:13.980Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljnfgr3mgg",
+        "content": "dime si tus herramientas estan funcionales",
+        "vectorKeywords": [
+          "dime",
+          "herramientas",
+          "estan",
+          "funcionales"
+        ],
+        "timestamp": "2026-05-25T18:32:44.043Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljo2k7mraw",
+        "content": "dime cal es la noticia mas importante de hoy en dia",
+        "vectorKeywords": [
+          "dime",
+          "noticia",
+          "importante"
+        ],
+        "timestamp": "2026-05-25T18:33:13.975Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljudl16bmd",
+        "content": "estas funcional ?",
+        "vectorKeywords": [
+          "estas",
+          "funcional"
+        ],
+        "timestamp": "2026-05-25T18:38:08.197Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpljuvmcqtj2",
+        "content": "busca la noticia del dia de hoy la mas impactante",
+        "vectorKeywords": [
+          "busca",
+          "noticia",
+          "impactante"
+        ],
+        "timestamp": "2026-05-25T18:38:31.572Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplkeu3gsx1e",
+        "content": "hola buenas tardes",
+        "vectorKeywords": [
+          "hola",
+          "buenas",
+          "tardes"
+        ],
+        "timestamp": "2026-05-25T18:54:02.716Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplkf6w50lkz",
+        "content": "quiero que me llames oscar",
+        "vectorKeywords": [
+          "quiero",
+          "llames",
+          "oscar"
+        ],
+        "timestamp": "2026-05-25T18:54:19.301Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplkfkdu339m",
+        "content": "dime como estan las noticias sobre IA hoy",
+        "vectorKeywords": [
+          "dime",
+          "estan",
+          "noticias",
+          "sobre"
+        ],
+        "timestamp": "2026-05-25T18:54:36.786Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplkzehrmogm",
+        "content": "que tenemos de nuevo con gemini?",
+        "vectorKeywords": [
+          "tenemos",
+          "nuevo",
+          "gemini"
+        ],
+        "timestamp": "2026-05-25T19:10:02.271Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpll0x064e0a",
+        "content": "que tenemos de nuevo con gemini?",
+        "vectorKeywords": [
+          "tenemos",
+          "nuevo",
+          "gemini"
+        ],
+        "timestamp": "2026-05-25T19:11:12.918Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpll1mhhjmcw",
+        "content": "que tenemos de nuevo con gemini?",
+        "vectorKeywords": [
+          "tenemos",
+          "nuevo",
+          "gemini"
+        ],
+        "timestamp": "2026-05-25T19:11:45.941Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpll1wemgdj3",
+        "content": "busca en internet: que tenemos de nuevo con gemini?",
+        "vectorKeywords": [
+          "busca",
+          "internet",
+          "tenemos",
+          "nuevo",
+          "gemini"
+        ],
+        "timestamp": "2026-05-25T19:11:58.798Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpll2hq65370",
+        "content": "busca en internet: que tenemos de nuevo con gemini?",
+        "vectorKeywords": [
+          "busca",
+          "internet",
+          "tenemos",
+          "nuevo",
+          "gemini"
+        ],
+        "timestamp": "2026-05-25T19:12:26.430Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpll2u0olsz9",
+        "content": "busca en internet: que tenemos de nuevo con gemini?",
+        "vectorKeywords": [
+          "busca",
+          "internet",
+          "tenemos",
+          "nuevo",
+          "gemini"
+        ],
+        "timestamp": "2026-05-25T19:12:42.360Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpll3m4wv3yn",
+        "content": "busca en internet: que tenemos de nuevo con gemini?",
+        "vectorKeywords": [
+          "busca",
+          "internet",
+          "tenemos",
+          "nuevo",
+          "gemini"
+        ],
+        "timestamp": "2026-05-25T19:13:18.800Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplomhvcpnyy",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T20:51:58.584Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplomyrjdx6p",
+        "content": "cuales son las novedades con respecto a google",
+        "vectorKeywords": [
+          "cuales",
+          "novedades",
+          "respecto",
+          "google"
+        ],
+        "timestamp": "2026-05-25T20:52:20.479Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mploov8fn1co",
+        "content": "pues Exactamente no Ahora quiero que me digas Cuáles son las novedades con respecto al tropic y",
+        "vectorKeywords": [
+          "pues",
+          "exactamente",
+          "ahora",
+          "quiero",
+          "digas",
+          "cules",
+          "novedades",
+          "respecto",
+          "tropic"
+        ],
+        "timestamp": "2026-05-25T20:53:49.215Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplopaqt6srz",
+        "content": "señor he recibido su instrucción pues Exactamente no Ahora quiero que me digas Cuáles son las novedades con respecto al tropicy Actualmente estoy operando en modo de diagnóstico local n&m ya que no he detectado una conexión activa a lápiz central no obstante mis procesadores están listos",
+        "vectorKeywords": [
+          "seor",
+          "recibido",
+          "instruccin",
+          "pues",
+          "exactamente",
+          "ahora",
+          "quiero",
+          "digas",
+          "cules",
+          "novedades",
+          "respecto",
+          "tropicy",
+          "actualmente",
+          "estoy",
+          "operando",
+          "modo",
+          "diagnstico",
+          "local",
+          "detectado",
+          "conexin",
+          "activa",
+          "lpiz",
+          "central",
+          "obstante",
+          "procesadores",
+          "estn",
+          "listos"
+        ],
+        "timestamp": "2026-05-25T20:54:09.317Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplor048zuic",
+        "content": "novedades sobre open ai",
+        "vectorKeywords": [
+          "novedades",
+          "sobre",
+          "open"
+        ],
+        "timestamp": "2026-05-25T20:55:28.856Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplppt0ajv78",
+        "content": "hola",
+        "vectorKeywords": [
+          "hola"
+        ],
+        "timestamp": "2026-05-25T21:22:32.602Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplpq0vimk83",
+        "content": "llamame oscar",
+        "vectorKeywords": [
+          "llamame",
+          "oscar"
+        ],
+        "timestamp": "2026-05-25T21:22:42.798Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplpq2g73g2t",
+        "content": "[Auto-Conocimiento] Nueva habilidad adquirida de forma autónoma: \"Actualizar memoria a largo plazo\". Propósito: Actualiza el nombre preferido del usuario en la memoria de largo plazo.",
+        "vectorKeywords": [
+          "autoconocimiento",
+          "nueva",
+          "habilidad",
+          "adquirida",
+          "forma",
+          "autnoma",
+          "actualizar",
+          "memoria",
+          "largo",
+          "plazo",
+          "propsito",
+          "actualiza",
+          "nombre",
+          "preferido",
+          "usuario"
+        ],
+        "timestamp": "2026-05-25T21:22:44.839Z",
+        "source": "skill_generation",
+        "importance": 8
+      },
+      {
+        "id": "mem_mplprcakbr8s",
+        "content": "la carpeta de downloads esta bastante desorganizada, puedes organizarme en carpeta todos los archivos por tipos de archivos ?",
+        "vectorKeywords": [
+          "carpeta",
+          "downloads",
+          "esta",
+          "bastante",
+          "desorganizada",
+          "puedes",
+          "organizarme",
+          "todos",
+          "archivos",
+          "tipos"
+        ],
+        "timestamp": "2026-05-25T21:23:44.252Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplqcs2o3ayl",
+        "content": "La carpeta de downloads está desorganizada, organízame por carpetas todos los archivos según su tipo",
+        "vectorKeywords": [
+          "carpeta",
+          "downloads",
+          "desorganizada",
+          "organzame",
+          "carpetas",
+          "todos",
+          "archivos",
+          "segn",
+          "tipo"
+        ],
+        "timestamp": "2026-05-25T21:40:24.480Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplqdot0dlqk",
+        "content": "ok dime ya terminaste ?",
+        "vectorKeywords": [
+          "dime",
+          "terminaste"
+        ],
+        "timestamp": "2026-05-25T21:41:06.900Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplqs71zwm3m",
+        "content": "quiero q revices mi carpeta de downloads, tengo muchos archivos ahi organizalos en carpetas segun su tipo",
+        "vectorKeywords": [
+          "quiero",
+          "revices",
+          "carpeta",
+          "downloads",
+          "tengo",
+          "muchos",
+          "archivos",
+          "organizalos",
+          "carpetas",
+          "segun",
+          "tipo"
+        ],
+        "timestamp": "2026-05-25T21:52:23.735Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplqv8hzyfdg",
+        "content": "en la carpeta de documentos que acabas de crear tiene un documento llamado CANVA_PROOFcambiale el nombre a CANVA y dime que dice ese documento",
+        "vectorKeywords": [
+          "carpeta",
+          "documentos",
+          "acabas",
+          "crear",
+          "tiene",
+          "documento",
+          "llamado",
+          "canva_proofcambiale",
+          "nombre",
+          "canva",
+          "dime",
+          "dice"
+        ],
+        "timestamp": "2026-05-25T21:54:45.575Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplqw6izgvsh",
+        "content": "C:\\Users\\user\\Downloads\\Documentos",
+        "vectorKeywords": [
+          "cusersuserdownloadsdocumentos"
+        ],
+        "timestamp": "2026-05-25T21:55:29.675Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mplqwzaeo5ss",
+        "content": "renombra el archivo a CANVA y dime de que se trata ese documento",
+        "vectorKeywords": [
+          "renombra",
+          "archivo",
+          "canva",
+          "dime",
+          "trata",
+          "documento"
+        ],
+        "timestamp": "2026-05-25T21:56:06.950Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn4h14b9j18",
+        "content": "ultima noticia sobre IA",
+        "vectorKeywords": [
+          "ultima",
+          "noticia",
+          "sobre"
+        ],
+        "timestamp": "2026-05-26T21:03:23.627Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn4indtck57",
+        "content": "alguna novedad de antrhopicy el modelo de mythos",
+        "vectorKeywords": [
+          "alguna",
+          "novedad",
+          "antrhopicy",
+          "modelo",
+          "mythos"
+        ],
+        "timestamp": "2026-05-26T21:04:39.137Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn60ktqxj11",
+        "content": "Hola amigo mío Puedes decirme si puedes leer documentos PDF que yo tenga en algún lugar en mi disco duro",
+        "vectorKeywords": [
+          "hola",
+          "amigo",
+          "puedes",
+          "decirme",
+          "leer",
+          "documentos",
+          "tenga",
+          "algn",
+          "lugar",
+          "disco",
+          "duro"
+        ],
+        "timestamp": "2026-05-26T21:46:35.246Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn611egqytn",
+        "content": "señor he recibido su instrucción Hola amigo mío Puedes decirme si puedes leer documentos PDF que yo tenga en algún lugar en mi disco duro Actualmente estoy operando en modo de diagnóstico local no obstante mis procesadores están listos",
+        "vectorKeywords": [
+          "seor",
+          "recibido",
+          "instruccin",
+          "hola",
+          "amigo",
+          "puedes",
+          "decirme",
+          "leer",
+          "documentos",
+          "tenga",
+          "algn",
+          "lugar",
+          "disco",
+          "duro",
+          "actualmente",
+          "estoy",
+          "operando",
+          "modo",
+          "diagnstico",
+          "local",
+          "obstante",
+          "procesadores",
+          "estn",
+          "listos"
+        ],
+        "timestamp": "2026-05-26T21:46:56.728Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn616ru0b3r",
+        "content": "puedes leer documentos pdf?",
+        "vectorKeywords": [
+          "puedes",
+          "leer",
+          "documentos"
+        ],
+        "timestamp": "2026-05-26T21:47:03.690Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn619kcuhpm",
+        "content": "señor he recibido su instrucción señores recibidos su instrucción Hola amigo mío Puedes decirme si puedes leer documentos PDF",
+        "vectorKeywords": [
+          "seor",
+          "recibido",
+          "instruccin",
+          "seores",
+          "recibidos",
+          "hola",
+          "amigo",
+          "puedes",
+          "decirme",
+          "leer",
+          "documentos"
+        ],
+        "timestamp": "2026-05-26T21:47:07.308Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn61q1njfmx",
+        "content": "Pero cuál es el problema Si es que yo te estoy diciendo que operes dentro de la clave ya pide nunca te he pedido que operes con Jimmy",
+        "vectorKeywords": [
+          "pero",
+          "problema",
+          "estoy",
+          "diciendo",
+          "operes",
+          "dentro",
+          "clave",
+          "pide",
+          "nunca",
+          "pedido",
+          "jimmy"
+        ],
+        "timestamp": "2026-05-26T21:47:28.667Z",
+        "source": "conversation",
+        "importance": 3
+      },
+      {
+        "id": "mem_mpn6236ep0if",
+        "content": "está funcionando tienes algún problema",
+        "vectorKeywords": [
+          "funcionando",
+          "tienes",
+          "algn",
+          "problema"
+        ],
+        "timestamp": "2026-05-26T21:47:45.686Z",
+        "source": "conversation",
+        "importance": 3
+      }
+    ],
+    "nodes": [
+      {
+        "id": "nim",
+        "label": "NIM Engine",
+        "type": "concept"
+      },
+      {
+        "id": "user",
+        "label": "El Señor Oskr900117",
+        "type": "entity"
+      },
+      {
+        "id": "nim_engine",
+        "label": "NIM Engine",
+        "type": "concept"
+      },
+      {
+        "id": "actualizar_memoria_a_largo_plazo",
+        "label": "Actualizar memoria a largo plazo",
+        "type": "skill"
+      }
+    ],
+    "edges": [
+      {
+        "source": "nim",
+        "target": "user",
+        "relation": "sirve_fielmente_a"
+      },
+      {
+        "source": "nim_engine",
+        "target": "actualizar_memoria_a_largo_plazo",
+        "relation": "adquiere_habilidad"
+      }
+    ]
+  }
+}

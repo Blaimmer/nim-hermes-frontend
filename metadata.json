@@ -1,0 +1,6 @@
+{
+  "name": "NIM",
+  "description": "Asistente de Inteligencia Artificial agéntica con reconocimiento de voz, flujo de pensamiento y HUD visual futurista estilo Iron Man.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
