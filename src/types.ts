@@ -1,6 +1,12 @@
-export type Provider = 'gemini' | 'deepseek' | 'anthropic';
-
 export type SystemStatus = 'STANDBY' | 'LISTENING' | 'THINKING' | 'SPEAKING' | 'ERROR';
+
+export interface HermesModel {
+  id: string;
+  name: string;
+  provider: string;
+  description: string;
+  strengths: string;
+}
 
 export interface LogEntry {
   id: string;

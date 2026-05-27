@@ -8,7 +8,13 @@ import { AgentCoreEngine } from './agentCore';
 import { Heartbeat } from './automation/heartbeat';
 import { WikiManager } from './core/wiki_manager';
 
+import { existsSync } from 'fs';
 dotenv.config();
+// También cargar .env de Hermes si existe (API keys)
+const hermesEnv = path.join(os.homedir(), '.hermes', '.env');
+if (existsSync(hermesEnv)) {
+  dotenv.config({ path: hermesEnv, override: true });
+}
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -845,7 +851,7 @@ app.post('/api/agent', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'hermes-agent',
+        model: loadModelPrefs().active,
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -893,7 +899,7 @@ app.post('/api/agent/stream', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'hermes-agent',
+        model: loadModelPrefs().active,
         messages: [{ role: 'user', content: prompt }],
         stream: true,
       }),
@@ -952,6 +958,107 @@ app.post('/api/agent/stream', async (req, res) => {
     send({ type: 'error', message: e.message });
     res.end();
   }
+});
+
+// ==========================================
+// GESTIÓN DE MODELOS Y MÉTRICAS HERMES
+// ==========================================
+
+import fs from 'fs';
+
+// Modelos disponibles en Hermes (los que el usuario puede elegir)
+const ALL_HERMES_MODELS = [
+  { id: 'deepseek-v4-pro',    name: 'DeepSeek V4 Pro',     provider: 'deepseek',  description: 'Razonamiento lógico superior, precio ultra bajo',       strengths: 'lógica, código, JSON' },
+  { id: 'deepseek-chat',      name: 'DeepSeek Chat',       provider: 'deepseek',  description: 'Balance velocidad/calidad, excelente para tareas diarias', strengths: 'balance, rápido, barato' },
+  { id: 'gemini-2.5-flash',   name: 'Gemini 2.5 Flash',    provider: 'gemini',    description: 'Google — gratuito, 1500 req/día, búsqueda integrada',      strengths: 'gratis, búsqueda, rápido' },
+  { id: 'gemini-2.5-pro',     name: 'Gemini 2.5 Pro',      provider: 'gemini',    description: 'Google — potente, contexto 1M tokens, multimodal',          strengths: 'contexto, visión, razonamiento' },
+  { id: 'claude-sonnet-4',    name: 'Claude Sonnet 4',     provider: 'anthropic', description: 'Prosa impecable, código avanzado, razonamiento profundo',  strengths: 'redacción, código, análisis' },
+  { id: 'claude-opus-4',      name: 'Claude Opus 4',       provider: 'anthropic', description: 'Máxima calidad Anthropic, tareas complejas',              strengths: 'élite, creatividad, profundidad' },
+  { id: 'gpt-4.1',            name: 'GPT-4.1',             provider: 'openai',    description: 'OpenAI — versátil, amplio conocimiento general',            strengths: 'general, versátil, rápido' },
+];
+
+// Archivo de preferencias (qué 3 modelos mostrar en los botones rápidos)
+const MODEL_PREFS_PATH = path.join(process.cwd(), '.hermes-model-prefs.json');
+
+function loadModelPrefs(): { active: string; quickModels: string[] } {
+  try {
+    if (fs.existsSync(MODEL_PREFS_PATH)) {
+      return JSON.parse(fs.readFileSync(MODEL_PREFS_PATH, 'utf-8'));
+    }
+  } catch (e) {}
+  return { active: 'deepseek-v4-pro', quickModels: ['deepseek-v4-pro', 'gemini-2.5-flash', 'claude-sonnet-4'] };
+}
+
+function saveModelPrefs(prefs: { active: string; quickModels: string[] }) {
+  fs.writeFileSync(MODEL_PREFS_PATH, JSON.stringify(prefs, null, 2), 'utf-8');
+}
+
+// Listar todos los modelos disponibles
+app.get('/api/hermes/models', (req, res) => {
+  const prefs = loadModelPrefs();
+  res.json({ models: ALL_HERMES_MODELS, active: prefs.active, quickModels: prefs.quickModels });
+});
+
+// Cambiar modelo activo
+app.post('/api/hermes/switch-model', (req, res) => {
+  const { modelId } = req.body;
+  const model = ALL_HERMES_MODELS.find(m => m.id === modelId);
+  if (!model) return res.status(400).json({ error: 'Modelo no encontrado' });
+  
+  const prefs = loadModelPrefs();
+  prefs.active = modelId;
+  saveModelPrefs(prefs);
+  
+  res.json({ success: true, active: modelId, model });
+});
+
+// Configurar qué 3 modelos aparecen en los botones rápidos
+app.post('/api/hermes/config-quick-models', (req, res) => {
+  const { quickModels } = req.body;
+  if (!Array.isArray(quickModels) || quickModels.length !== 3) {
+    return res.status(400).json({ error: 'Se requieren exactamente 3 modelos' });
+  }
+  const valid = quickModels.every((id: string) => ALL_HERMES_MODELS.some(m => m.id === id));
+  if (!valid) return res.status(400).json({ error: 'Uno o más modelos no son válidos' });
+  
+  const prefs = loadModelPrefs();
+  prefs.quickModels = quickModels;
+  saveModelPrefs(prefs);
+  
+  res.json({ success: true, quickModels });
+});
+
+// Métricas reales de la API (balance DeepSeek + uso local)
+app.get('/api/hermes/quota', async (req, res) => {
+  const prefs = loadModelPrefs();
+  const activeModel = ALL_HERMES_MODELS.find(m => m.id === prefs.active);
+  
+  let deepseekBalance: any = null;
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
+  
+  if (deepseekKey && activeModel?.provider === 'deepseek') {
+    try {
+      const balanceRes = await fetch('https://api.deepseek.com/user/balance', {
+        headers: { 'Authorization': `Bearer ${deepseekKey}`, 'Content-Type': 'application/json' }
+      });
+      if (balanceRes.ok) {
+        deepseekBalance = await balanceRes.json();
+      }
+    } catch (e) { console.error('Error consultando balance DeepSeek:', e); }
+  }
+  
+  res.json({
+    activeModel: prefs.active,
+    activeProvider: activeModel?.provider || 'desconocido',
+    quickModels: prefs.quickModels,
+    deepseekBalance,
+    hasKey: {
+      deepseek: !!process.env.DEEPSEEK_API_KEY && !process.env.DEEPSEEK_API_KEY?.includes('MY_'),
+      gemini: !!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY?.includes('MY_'),
+      anthropic: !!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY?.includes('MY_'),
+      openai: !!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY?.includes('MY_'),
+    }
+  });
 });
 
 // ==========================================

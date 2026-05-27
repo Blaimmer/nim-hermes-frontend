@@ -32,7 +32,7 @@ import {
   HelpCircle,
   Hash
 } from 'lucide-react';
-import { Provider, SystemStatus, LogEntry, ChatMessage, Skill, Stats } from './types';
+import { SystemStatus, LogEntry, ChatMessage, Skill, Stats, HermesModel } from './types';
 
 // Web Speech API for browser vocal compatibility
 const SpeechRecognitionAPI = 
@@ -40,7 +40,12 @@ const SpeechRecognitionAPI =
 
 export default function App() {
   // General State
-  const [provider, setProvider] = useState<Provider>('gemini');
+  const [activeModel, setActiveModel] = useState<string>('deepseek-v4-pro');
+  const [activeModelName, setActiveModelName] = useState<string>('DeepSeek V4 Pro');
+  const [modelsList, setModelsList] = useState<HermesModel[]>([]);
+  const [quickModels, setQuickModels] = useState<string[]>(['deepseek-v4-pro', 'gemini-2.5-flash', 'claude-sonnet-4']);
+  const [showModelSettings, setShowModelSettings] = useState<boolean>(false);
+  const [tempQuickSelection, setTempQuickSelection] = useState<string[]>(['deepseek-v4-pro', 'gemini-2.5-flash', 'claude-sonnet-4']);
   const [status, setStatus] = useState<SystemStatus>('STANDBY');
 
   // Server-side audited system information state
@@ -218,8 +223,8 @@ export default function App() {
   // Quotas & Rate Limits State
   const [quotaData, setQuotaData] = useState<any>(null);
   const [showQuotasModal, setShowQuotasModal] = useState<boolean>(false);
+  const [hasKeys, setHasKeys] = useState<Record<string, boolean>>({});
   const previousQuotaStatus = useRef<any>(null);
-  const autoSelectedProviderRef = useRef<boolean>(false);
 
   // Stats State
   const [stats, setStats] = useState<Stats>({
@@ -442,54 +447,67 @@ export default function App() {
     };
   }, []);
 
-  // Poll of API rate limit state and restoration warnings
+  // Poll de modelos y cuotas del backend Hermes
   useEffect(() => {
-    const fetchQuotaStatus = async () => {
+    const fetchModelsAndQuota = async () => {
       try {
-        const res = await fetch('/api/quota-status');
-        if (!res.ok) return;
-        const data = await res.json();
-        setQuotaData(data);
-
-        // Auto-detect and switch to the active API key on startup
-        if (data && !autoSelectedProviderRef.current) {
-          autoSelectedProviderRef.current = true;
-          if (!data.gemini?.hasKey) {
-            if (data.deepseek?.hasKey) {
-              setProvider('deepseek');
-              addLog('system', 'DETECCIÓN COGNITIVA: No se halló clave de Gemini. Conmutando automáticamente a DeepSeek (Canal Activo).');
-            } else if (data.anthropic?.hasKey) {
-              setProvider('anthropic');
-              addLog('system', 'DETECCIÓN COGNITIVA: No se halló clave de Gemini. Conmutando automáticamente a Claude-3.5 (Canal Activo).');
-            }
+        // Cargar modelos disponibles y quickModels
+        let modelsData: { models: HermesModel[]; active: string; quickModels: string[] } | null = null;
+        const modelsRes = await fetch('/api/hermes/models');
+        if (modelsRes.ok) {
+          const data = await modelsRes.json();
+          modelsData = data;
+          setModelsList(data.models || []);
+          if (data.quickModels && data.quickModels.length === 3) {
+            setQuickModels(data.quickModels);
+            setTempQuickSelection(data.quickModels);
+          }
+          if (data.active) {
+            setActiveModel(data.active);
+            const found = (data.models || []).find((m: HermesModel) => m.id === data.active);
+            if (found) setActiveModelName(found.name);
           }
         }
 
-        // Detect if any provider recovered from suspension
-        if (previousQuotaStatus.current) {
-          const providers: Array<'gemini' | 'anthropic' | 'deepseek'> = ['gemini', 'anthropic', 'deepseek'];
-          providers.forEach((prov) => {
-            const prevSuspended = previousQuotaStatus.current[prov]?.suspendedUntil;
-            const currentSuspended = data[prov]?.suspendedUntil;
-            
-            if (prevSuspended && !currentSuspended) {
-              const msg = `RESTAURACIÓN COGNITIVA: El motor ${prov.toUpperCase()} se ha enfriado por completo y recuperó su funcionalidad óptima.`;
-              addLog('system', msg);
-              speakText(`Señor, le informo de que el motor ${prov.toUpperCase()} vuelve a estar completamente en línea y preparado para sus instrucciones.`);
-              addChatMessage('nim', `Señor, le informo de que mi motor ${prov.toUpperCase()} ha restablecido sus relés cuánticos y ya se encuentra totalmente funcional.`);
+        // Cargar métricas reales de cuota
+        const quotaRes = await fetch('/api/hermes/quota');
+        if (quotaRes.ok) {
+          const quota = await quotaRes.json();
+          setQuotaData(quota);
+          setHasKeys(quota.hasKey || {});
+
+          // Auto-detección: si el modelo activo no tiene key, buscar alternativas
+          if (quota.hasKey) {
+            const activeKeyOk = quota.activeProvider && quota.hasKey[quota.activeProvider];
+            if (!activeKeyOk && !previousQuotaStatus.current?.switched) {
+              // Buscar el primer modelo con key configurada
+              const allModels = modelsList.length > 0 ? modelsList : (modelsData?.models || []);
+              const altModel = allModels.find(
+                (m: HermesModel) => quota.hasKey[m.provider]
+              );
+              if (altModel) {
+                try {
+                  await fetch('/api/hermes/switch-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modelId: altModel.id }),
+                  });
+                  setActiveModel(altModel.id);
+                  setActiveModelName(altModel.name);
+                  addLog('system', `DETECCIÓN COGNITIVA: Conmutando automáticamente a ${altModel.name} (Canal Activo).`);
+                } catch (e) {}
+              }
+              previousQuotaStatus.current = { ...previousQuotaStatus.current, switched: true };
             }
-          });
+          }
         }
-        previousQuotaStatus.current = data;
       } catch (err: any) {
-        // Log gently as a warning since this runs on a continuous background interval
-        // and can easily fail momentarily during normal development server rebuilds/restarts.
         console.warn('Conexión con el servidor NIM momentáneamente inactiva (Reintentando...):', err.message || err);
       }
     };
 
-    fetchQuotaStatus();
-    const interval = setInterval(fetchQuotaStatus, 3000);
+    fetchModelsAndQuota();
+    const interval = setInterval(fetchModelsAndQuota, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -573,7 +591,7 @@ export default function App() {
       sender,
       text,
       timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
-      modelUsed: sender === 'nim' ? provider.toUpperCase() : undefined
+      modelUsed: sender === 'nim' ? activeModelName.toUpperCase() : undefined
     };
     setChatMessages(prev => [...prev, newMessage]);
   };
@@ -674,7 +692,7 @@ export default function App() {
         addLog('system', '[COMANDO] Generación y síntesis de voz abortadas.');
         return;
       } else if (cmd === '/status') {
-        const statusMsg = `NIM_CENTRAL STATUS:\n- Motor: ${provider}\n- Memoria HUD: ${stats.memory}\n- Skills: ${skills.length}\n- Uptime: OK`;
+        const statusMsg = `NIM_CENTRAL STATUS:\n- Motor: ${activeModelName}\n- Memoria HUD: ${stats.memory}\n- Skills: ${skills.length}\n- Uptime: OK`;
         addLog('system', statusMsg);
         addChatMessage('nim', statusMsg);
         return;
@@ -1181,7 +1199,7 @@ export default function App() {
           <div className="flex items-center space-x-3 bg-[#06111c]/80 border border-cyan-950 px-2 line-clamp-1 py-1 rounded">
             <span className="text-[9px] text-cyan-500 font-mono uppercase">CONECTOR:</span>
             <span className="text-[10px] font-mono text-amber-400 uppercase font-bold tracking-wider">
-              {provider.toUpperCase()} ENGINE
+              {activeModelName.toUpperCase()}
             </span>
           </div>
 
@@ -1192,7 +1210,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* PROMINENT MODEL SWITCHER TAB MENU (USER REQUESTED FEATURE) */}
+      {/* PROMINENT MODEL SWITCHER TAB MENU — DINÁMICO DESDE HERMES */}
       <section className="bg-[#05111b] border border-cyan-900/50 p-2.5 rounded-md mb-2 md:mb-2.5 flex flex-col gap-2 shrink-0">
         <div className="flex flex-col md:flex-row items-center justify-between gap-2 border-b border-cyan-950 pb-2">
           <div className="flex items-center justify-between w-full md:w-auto gap-2">
@@ -1204,7 +1222,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Premium details controller trigger button (User request) */}
+            {/* Premium details controller trigger button */}
             <button
               onClick={() => setShowQuotasModal(true)}
               type="button"
@@ -1216,94 +1234,98 @@ export default function App() {
             </button>
           </div>
           
-          <div className="grid grid-cols-3 gap-1.5 w-full md:w-auto">
-            <button
-              type="button"
-              onClick={() => {
-                setProvider('gemini');
-                addLog('system', 'Matriz de NIM redirigida a GEMINI 3.5 FLASH.');
-                speakText('Motor central de Gemini cargado. Equilibrado para análisis interactivo veloz.');
-              }}
-              className={`relative px-3 py-2 border rounded font-mono text-center transition flex flex-col justify-center items-center gap-0.5 text-[10px] uppercase font-bold min-w-[100px] ${
-                provider === 'gemini' 
-                  ? 'border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_8px_rgba(0,242,255,0.25)]' 
-                  : 'border-cyan-950 bg-black/40 text-cyan-600 hover:text-cyan-300'
-              }`}
-            >
-              <div className="flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-400" />
-                Gemini 3.5
-              </div>
-              {quotaData?.gemini ? (
-                quotaData.gemini.suspendedUntil ? (
-                  <span className="text-[7.5px] text-red-500 font-mono animate-pulse font-bold">⚠️ SUSP. {Math.ceil(quotaData.gemini.recoversInMs/1000)}s</span>
-                ) : (
-                  <span className="text-[7.5px] text-green-400 font-mono font-medium">{quotaData.gemini.requestsThisMinute}/15 RPM</span>
-                )
-              ) : (
-                <span className="text-[7.5px] text-cyan-600 font-mono">Cargando...</span>
-              )}
-            </button>
+          {/* 3 Botones Dinámicos + Engranaje de Configuración */}
+          <div className="flex items-center gap-1.5 w-full md:w-auto">
+            <div className="grid grid-cols-3 gap-1.5 flex-1">
+              {quickModels.map((modelId, idx) => {
+                const model = modelsList.find(m => m.id === modelId);
+                const modelHasKey = model ? (hasKeys[model.provider] ?? true) : true;
+                const isActive = activeModel === modelId;
+                
+                if (!model) {
+                  return (
+                    <div key={idx} className="px-3 py-2 border border-cyan-950 bg-black/40 rounded font-mono text-center text-[10px] text-cyan-800 flex flex-col justify-center items-center gap-0.5 min-w-[100px]">
+                      <span className="text-[8px]">Cargando...</span>
+                    </div>
+                  );
+                }
 
-            <button
-              type="button"
-              onClick={() => {
-                setProvider('deepseek');
-                addLog('system', 'Matriz de NIM redirigida a DEEPSEEK MATHEMATICAL ENGINE.');
-                speakText('Matriz lógica DeepSeek acoplada. Razonamiento minucioso activo.');
-              }}
-              className={`relative px-3 py-2 border rounded font-mono text-center transition flex flex-col justify-center items-center gap-0.5 text-[10px] uppercase font-bold min-w-[100px] ${
-                provider === 'deepseek' 
-                  ? 'border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_8px_rgba(0,242,255,0.25)]' 
-                  : 'border-cyan-950 bg-black/40 text-cyan-600 hover:text-cyan-300'
-              }`}
-            >
-              <div className="flex items-center gap-1">
-                <Database className="w-3 h-3 text-cyan-400" />
-                DeepSeek Logic
-              </div>
-              {quotaData?.deepseek ? (
-                quotaData.deepseek.suspendedUntil ? (
-                  <span className="text-[7.5px] text-red-500 font-mono animate-pulse font-bold">⚠️ SUSP. {Math.ceil(quotaData.deepseek.recoversInMs/1000)}s</span>
-                ) : (
-                  <span className="text-[7.5px] text-green-400 font-mono font-medium">{quotaData.deepseek.requestsThisMinute}/60 RPM</span>
-                )
-              ) : (
-                <span className="text-[7.5px] text-cyan-600 font-mono">Cargando...</span>
-              )}
-            </button>
+                const providerColors: Record<string, string> = {
+                  deepseek: 'text-cyan-400',
+                  gemini: 'text-amber-400',
+                  anthropic: 'text-purple-400',
+                  openai: 'text-green-400',
+                };
+                const iconColor = providerColors[model.provider] || 'text-cyan-400';
 
+                return (
+                  <button
+                    key={modelId}
+                    type="button"
+                    disabled={!modelHasKey}
+                    onClick={async () => {
+                      addLog('system', `Solicitando conmutación a ${model.name}...`);
+                      try {
+                        const res = await fetch('/api/hermes/switch-model', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ modelId: model.id }),
+                        });
+                        if (res.ok) {
+                          setActiveModel(model.id);
+                          setActiveModelName(model.name);
+                          addLog('system', `Matriz de NIM redirigida a ${model.name.toUpperCase()}.`);
+                          const confirmMsg = `¿Seguro que quiere cambiar a ${model.name}? El switch cognitivo está completo.`;
+                          addChatMessage('nim', confirmMsg);
+                          speakText(`Motor ${model.name} acoplado. Razonamiento activo.`);
+                        }
+                      } catch (e: any) {
+                        addLog('system', `Error al conmutar: ${e.message}`);
+                      }
+                    }}
+                    className={`relative px-3 py-2 border rounded font-mono text-center transition flex flex-col justify-center items-center gap-0.5 text-[10px] uppercase font-bold min-w-[100px] ${
+                      !modelHasKey ? 'opacity-40 cursor-not-allowed border-cyan-950/30 bg-black/30 text-cyan-800' :
+                      isActive 
+                        ? 'border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_8px_rgba(0,242,255,0.25)]' 
+                        : 'border-cyan-950 bg-black/40 text-cyan-600 hover:text-cyan-300'
+                    }`}
+                    title={!modelHasKey ? `Sin API key configurada para ${model.provider}` : `Cambiar a ${model.name}`}
+                  >
+                    <div className="flex items-center gap-1">
+                      {model.provider === 'deepseek' && <Database className={`w-3 h-3 ${iconColor}`} />}
+                      {model.provider === 'gemini' && <Sparkles className={`w-3 h-3 ${iconColor}`} />}
+                      {model.provider === 'anthropic' && <Layers className={`w-3 h-3 ${iconColor}`} />}
+                      {model.provider === 'openai' && <Grid className={`w-3 h-3 ${iconColor}`} />}
+                      <span className="text-[9px] leading-tight">{model.name}</span>
+                    </div>
+                    {modelHasKey ? (
+                      <span className={`text-[7.5px] font-mono font-medium ${isActive ? 'text-green-400' : 'text-cyan-600'}`}>
+                        {isActive ? '● ACTIVO' : 'DISPONIBLE'}
+                      </span>
+                    ) : (
+                      <span className="text-[7.5px] text-red-600 font-mono">⚠ SIN KEY</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            
+            {/* Botón de Configuración (Engranaje) */}
             <button
               type="button"
               onClick={() => {
-                setProvider('anthropic');
-                addLog('system', 'Matriz de NIM redirigida a CLAUDE DEEP CONTEXT.');
-                speakText('Estructura conceptual Claude seleccionada. Comprensión semántica robusta.');
+                setTempQuickSelection([...quickModels]);
+                setShowModelSettings(true);
               }}
-              className={`relative px-3 py-2 border rounded font-mono text-center transition flex flex-col justify-center items-center gap-0.5 text-[10px] uppercase font-bold min-w-[100px] ${
-                provider === 'anthropic' 
-                  ? 'border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_8px_rgba(0,242,255,0.25)]' 
-                  : 'border-cyan-950 bg-black/40 text-cyan-600 hover:text-cyan-300'
-              }`}
+              className="p-2 border border-amber-900/50 bg-amber-950/20 hover:bg-amber-900/30 text-amber-500 hover:text-amber-300 rounded transition"
+              title="Configurar modelos rápidos"
             >
-              <div className="flex items-center gap-1">
-                <Layers className="w-3 h-3 text-purple-400" />
-                Claude 3.5
-              </div>
-              {quotaData?.anthropic ? (
-                quotaData.anthropic.suspendedUntil ? (
-                  <span className="text-[7.5px] text-red-500 font-mono animate-pulse font-bold">⚠️ SUSP. {Math.ceil(quotaData.anthropic.recoversInMs/1000)}s</span>
-                ) : (
-                  <span className="text-[7.5px] text-purple-400 font-mono font-medium">{quotaData.anthropic.requestsThisMinute}/50 RPM</span>
-                )
-              ) : (
-                <span className="text-[7.5px] text-cyan-600 font-mono">Cargando...</span>
-              )}
+              <Settings className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Dynamic Model Profile, Strengths, Weaknesses, and API key Health status card */}
+        {/* Dynamic Model Profile, Strengths, and API key Health status card */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-2 bg-[#030c14]/90 p-2 rounded border border-cyan-950/60 text-[9.5px] font-mono leading-relaxed">
           <div className="md:col-span-3 border-r border-cyan-950/40 pr-2 flex flex-col justify-between py-0.5">
             <div>
@@ -1312,18 +1334,19 @@ export default function App() {
                 PERFIL COGNITIVO ACTIVO
               </div>
               <div className="text-[11px] text-cyan-100 font-bold uppercase mt-1">
-                {quotaData?.[provider]?.model || `${provider.toUpperCase()} ENGINE`}
+                {activeModelName}
               </div>
             </div>
             <div className="mt-2 md:mt-0 pt-1.5 border-t border-cyan-950/30">
               <span className="text-cyan-600">CANAL SECRETO: </span>
-              {provider === 'anthropic' && !quotaData?.[provider]?.hasKey ? (
-                <span className="text-cyan-400 font-bold">DELEGACIÓN INTELIGENTE</span>
-              ) : quotaData?.[provider]?.hasKey ? (
-                <span className="text-green-400 font-bold">CONECTADO</span>
-              ) : (
-                <span className="text-amber-500/90 font-bold">SIMULATIVO</span>
-              )}
+              {(() => {
+                const currModel = modelsList.find(m => m.id === activeModel);
+                const currProvider = currModel?.provider || '';
+                const hasKey = hasKeys[currProvider];
+                if (!currProvider) return <span className="text-amber-500/90 font-bold">SIMULATIVO</span>;
+                if (hasKey) return <span className="text-green-400 font-bold">CONECTADO</span>;
+                return <span className="text-amber-500/90 font-bold">SIMULATIVO</span>;
+              })()}
             </div>
           </div>
 
@@ -1331,13 +1354,19 @@ export default function App() {
             <div>
               <span className="text-cyan-500 font-bold uppercase block">PUNTOS FUERTES / CAPACIDAD:</span>
               <p className="text-cyan-200/90 leading-tight text-[9px] mt-0.5">
-                {quotaData?.[provider]?.strengths || 'Cargando información ventajosa de relés...'}
+                {(() => {
+                  const currModel = modelsList.find(m => m.id === activeModel);
+                  return currModel?.strengths || 'Cargando información ventajosa de relés...';
+                })()}
               </p>
             </div>
             <div>
               <span className="text-amber-500 font-bold uppercase block">PUNTOS DÉBILES / RIESGOS:</span>
               <p className="text-amber-200/80 leading-tight text-[9px] mt-0.5">
-                {quotaData?.[provider]?.weaknesses || 'Cargando limitaciones operacionales...'}
+                {(() => {
+                  const currModel = modelsList.find(m => m.id === activeModel);
+                  return currModel?.description || 'Cargando limitaciones operacionales...';
+                })()}
               </p>
             </div>
           </div>
@@ -1346,36 +1375,133 @@ export default function App() {
             <div>
               <span className="text-cyan-500 font-bold uppercase block">ESTRUCTURA DE RESETEO:</span>
               <span className="text-cyan-300 text-[9px] block leading-tight">
-                {quotaData?.[provider]?.restoreWindow || 'Consultando directiva con el bus...'}
+                Recuperación automática por ventana de tráfico del proveedor
               </span>
             </div>
 
             <div className="bg-cyan-950/20 border border-cyan-900/30 p-1.5 rounded mt-1">
-              {quotaData?.[provider]?.suspendedUntil ? (
-                <div className="text-center text-red-500 font-bold flex flex-col items-center justify-center animate-pulse">
-                  <div className="flex items-center gap-1 uppercase text-[9px]">
-                    <AlertTriangle className="w-3 h-3 text-red-500 animate-bounce" />
-                    CUOTA TEMPORAL EXCEDIDA (429)
-                  </div>
-                  <span className="text-[8px] text-cyan-300 mt-0.5 font-bold">RESTABLECIENDO EN {Math.ceil(quotaData[provider].recoversInMs/1000)}s</span>
-                </div>
-              ) : quotaData?.[provider]?.requestsThisMinute >= 12 && provider === 'gemini' ? (
-                <div className="text-center text-amber-400 font-bold animate-pulse">
-                  ⚠️ ADVERTENCIA: PRÓXIMO AL LÍMITE
-                  <span className="text-[8px] text-cyan-300 block mt-0.5 font-bold">Consolas al 85% de capacidad min.</span>
-                </div>
-              ) : (
-                <div className="flex justify-between items-center text-[9px]">
-                  <span className="text-cyan-500 font-bold uppercase">CARGA ACTIVA DEL BLOQUE:</span>
-                  <span className="text-cyan-100 font-bold">
-                    {quotaData?.[provider]?.requestsThisMinute || 0} / {quotaData?.[provider]?.maxRequestsPerMinute || 15} MIN
-                  </span>
-                </div>
-              )}
+              <div className="flex justify-between items-center text-[9px]">
+                <span className="text-cyan-500 font-bold uppercase">PROVEEDOR ACTIVO:</span>
+                <span className="text-cyan-100 font-bold">
+                  {(() => {
+                    const currModel = modelsList.find(m => m.id === activeModel);
+                    return (currModel?.provider || 'DESCONOCIDO').toUpperCase();
+                  })()}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </section>
+
+      {/* MODAL DE CONFIGURACIÓN DE MODELOS RÁPIDOS */}
+      {showModelSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#020b12] border border-amber-500/60 rounded-lg w-full max-w-lg max-h-[80vh] overflow-y-auto flex flex-col shadow-[0_0_25px_rgba(245,158,11,0.15)]">
+            <header className="flex items-center justify-between p-4 border-b border-amber-900/40 bg-amber-950/20">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h2 className="text-sm font-mono font-bold tracking-wider text-amber-200 uppercase">
+                    Configurar Modelos Rápidos
+                  </h2>
+                  <p className="text-[9px] text-amber-500/70 font-mono uppercase">Seleccione exactamente 3 modelos</p>
+                </div>
+              </div>
+              <button onClick={() => setShowModelSettings(false)} className="text-amber-500 hover:text-red-400 transition" type="button">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </header>
+
+            <div className="p-4 space-y-2">
+              <div className="text-[10px] text-amber-300 font-mono mb-3 bg-amber-950/10 p-2 rounded border border-amber-900/30">
+                Seleccionados: <strong>{tempQuickSelection.length}/3</strong>
+              </div>
+              {modelsList.map((model) => {
+                const isSelected = tempQuickSelection.includes(model.id);
+                const modelHasKey = hasKeys[model.provider] ?? true;
+                const providerColors: Record<string, string> = {
+                  deepseek: 'text-cyan-400', gemini: 'text-amber-400', 
+                  anthropic: 'text-purple-400', openai: 'text-green-400',
+                };
+                return (
+                  <div
+                    key={model.id}
+                    className={`flex items-center justify-between p-2.5 rounded border transition cursor-pointer ${
+                      isSelected 
+                        ? 'border-amber-500/60 bg-amber-500/10' 
+                        : 'border-cyan-950/40 bg-black/30 hover:border-cyan-900/60'
+                    } ${!modelHasKey ? 'opacity-50' : ''}`}
+                    onClick={() => {
+                      if (isSelected) {
+                        setTempQuickSelection(prev => prev.filter(id => id !== model.id));
+                      } else if (tempQuickSelection.length < 3) {
+                        setTempQuickSelection(prev => [...prev, model.id]);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-cyan-900'}`}></div>
+                      <div>
+                        <span className={`text-[11px] font-mono font-bold uppercase ${providerColors[model.provider] || 'text-cyan-300'}`}>
+                          {model.name}
+                        </span>
+                        <span className="text-[8px] text-cyan-600 font-mono block">{model.provider.toUpperCase()}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!modelHasKey && <span className="text-[7.5px] text-red-500 font-mono">⚠ SIN KEY</span>}
+                      {isSelected ? (
+                        <CheckCircle2 className="w-4 h-4 text-amber-400" />
+                      ) : (
+                        <div className="w-4 h-4 border border-cyan-900 rounded"></div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <footer className="p-3 border-t border-amber-900/40 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowModelSettings(false)}
+                className="flex-1 bg-cyan-950/50 hover:bg-cyan-900 border border-cyan-800 text-cyan-400 py-2 rounded text-[9px] uppercase font-bold transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={tempQuickSelection.length !== 3}
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/hermes/config-quick-models', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ quickModels: tempQuickSelection }),
+                    });
+                    if (res.ok) {
+                      setQuickModels(tempQuickSelection);
+                      setShowModelSettings(false);
+                      addLog('system', 'Configuración de modelos rápidos actualizada.');
+                    }
+                  } catch (e: any) {
+                    addLog('system', `Error al guardar configuración: ${e.message}`);
+                  }
+                }}
+                className={`flex-1 border py-2 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1 ${
+                  tempQuickSelection.length === 3
+                    ? 'bg-amber-950/50 hover:bg-amber-900 border-amber-700 text-amber-300'
+                    : 'bg-gray-900 border-gray-800 text-gray-700 cursor-not-allowed'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Guardar
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       {/* THREE PANELS RESPONSIVE WORKSPACE GRID */}
       <div className="grid grid-cols-12 gap-3 mb-3">
@@ -3046,7 +3172,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* MONITOREO DE CUOTAS Y REGULACIONES POPUP MODAL */}
+      {/* MONITOREO DE CUOTAS Y REGULACIONES POPUP MODAL — DATOS REALES */}
       {showQuotasModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in" id="portalQuotas">
           <div className="bg-[#020b12] border border-cyan-500/60 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col shadow-[0_0_25px_rgba(0,190,255,0.2)]">
@@ -3082,246 +3208,150 @@ export default function App() {
                 <div className="bg-amber-900/30 text-amber-400 font-bold p-1 rounded font-mono uppercase text-[9px] border border-amber-800 shrink-0">
                   Directiva Proactiva
                 </div>
-                <p className="text-cyan-300 animate-pulse">
-                  <strong>Señor:</strong> Este centro de mando detalla el consumo medido por tokens del backend y las normativas legales de cada empresa. He modulado mis algoritmos regulatorios para alertarle proactivamente antes de agotar los créditos o superar la congestión de los servidores. El reset del ledger borrará las estadísticas de sesión pero mantendrá la cuota dinámica minuto a minuto de la API.
+                <p className="text-cyan-300">
+                  <strong>Señor:</strong> Este centro de mando muestra el modelo activo, el balance de DeepSeek y las API keys detectadas por el backend. Modelos sin clave aparecen deshabilitados.
                 </p>
               </div>
 
-              {/* Providers specification cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {['gemini', 'anthropic', 'deepseek'].map((prov) => {
-                  const data = quotaData?.[prov] || {
-                    model: prov === 'gemini' ? 'gemini-3.5-flash' : (prov === 'anthropic' ? 'claude-3-5-sonnet-latest' : 'deepseek-chat'),
-                    developer: prov === 'gemini' ? 'Google AI Studio' : (prov === 'anthropic' ? 'Anthropic' : 'DeepSeek Inc.'),
-                    website: prov === 'gemini' ? 'https://aistudio.google.com' : (prov === 'anthropic' ? 'https://anthropic.com' : 'https://deepseek.com'),
-                    strengths: 'Cargando...',
-                    weaknesses: 'Cargando...',
-                    restoreWindow: '1 minuto por ventana',
-                    contextLimit: prov === 'gemini' ? 1000000 : (prov === 'anthropic' ? 200000 : 128000),
-                    inputPrice: prov === 'gemini' ? 0.075 : (prov === 'anthropic' ? 3.00 : 0.14),
-                    outputPrice: prov === 'gemini' ? 0.30 : (prov === 'anthropic' ? 15.00 : 1.10),
-                    stats: { promptTokens: 0, completionTokens: 0, costUSD: 0, requestCount: 0 }
+              {/* Active Model Card */}
+              <div className="bg-cyan-950/5 border border-cyan-400/60 p-3 rounded">
+                <div className="flex justify-between items-center border-b border-cyan-950 pb-1.5 mb-2">
+                  <span className="text-[11px] font-bold text-cyan-300 uppercase">Modelo Cognitivo Activo</span>
+                  <span className="text-[8px] font-bold uppercase px-1 rounded bg-cyan-500/20 text-cyan-300">ACTIVO</span>
+                </div>
+                <div className="space-y-1 text-[9.5px]">
+                  <div><span className="text-cyan-500 font-bold uppercase">Modelo:</span> <span className="text-cyan-100 font-mono">{activeModelName}</span></div>
+                  <div><span className="text-cyan-500 font-bold uppercase">ID Técnico:</span> <span className="text-cyan-100 font-mono text-[9px]">{activeModel}</span></div>
+                  <div><span className="text-cyan-500 font-bold uppercase">Proveedor:</span> <span className="text-cyan-100">{
+                    (() => { const m = modelsList.find(x => x.id === activeModel); return (m?.provider || 'DESCONOCIDO').toUpperCase(); })()
+                  }</span></div>
+                  <div><span className="text-cyan-500 font-bold uppercase">Fortalezas:</span> <span className="text-cyan-100">{
+                    (() => { const m = modelsList.find(x => x.id === activeModel); return m?.strengths || '—'; })()
+                  }</span></div>
+                  <div><span className="text-cyan-500 font-bold uppercase">Descripción:</span> <span className="text-cyan-100">{
+                    (() => { const m = modelsList.find(x => x.id === activeModel); return m?.description || '—'; })()
+                  }</span></div>
+                </div>
+              </div>
+
+              {/* API Keys Status Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                {['deepseek', 'gemini', 'anthropic', 'openai'].map((prov) => {
+                  const keyOk = hasKeys[prov] ?? false;
+                  const providerColors: Record<string, { border: string; bg: string; text: string; label: string }> = {
+                    deepseek: { border: 'border-cyan-500/40', bg: 'bg-cyan-950/10', text: 'text-cyan-300', label: 'DEEPSEEK API' },
+                    gemini: { border: 'border-amber-500/40', bg: 'bg-amber-950/10', text: 'text-amber-300', label: 'GEMINI AI STUDIO' },
+                    anthropic: { border: 'border-purple-500/40', bg: 'bg-purple-950/10', text: 'text-purple-300', label: 'ANTHROPIC CONSOLE' },
+                    openai: { border: 'border-green-500/40', bg: 'bg-green-950/10', text: 'text-green-300', label: 'OPENAI PLATFORM' },
                   };
-
-                  const stats = data.stats || { promptTokens: 0, completionTokens: 0, costUSD: 0, requestCount: 0 };
-                  const percentUsed = Math.min(100, Math.round(((stats.promptTokens + stats.completionTokens) / data.contextLimit) * 100));
-
+                  const colors = providerColors[prov];
                   return (
-                    <div 
-                      key={prov}
-                      className={`border p-3 rounded bg-black/50 flex flex-col justify-between ${
-                        provider === prov 
-                          ? 'border-cyan-400/80 shadow-[0_0_8px_rgba(0,190,255,0.15)] bg-cyan-950/5' 
-                          : 'border-cyan-950'
-                      }`}
-                    >
+                    <div key={prov} className={`border ${colors.border} ${colors.bg} p-3 rounded flex flex-col justify-between ${!keyOk ? 'opacity-50' : ''}`}>
                       <div>
-                        {/* Header card state */}
-                        <div className="flex justify-between items-center border-b border-cyan-950 pb-1.5 mb-2">
-                          <span className="text-[11px] font-bold text-cyan-300 uppercase block">{prov} channels</span>
-                          <span className={`text-[8px] font-bold uppercase px-1 rounded ${
-                            provider === prov ? 'bg-cyan-500/20 text-cyan-300' : 'bg-neutral-900 text-neutral-500'
-                          }`}>
-                            {provider === prov ? 'ACTIVO' : 'DISPONIBLE'}
-                          </span>
-                        </div>
-
-                        {/* Model specifications */}
-                        <div className="space-y-1 text-[9.5px]">
-                          <div><span className="text-cyan-500 font-bold uppercase">Proveedor:</span> <span className="text-cyan-100">{data.developer}</span></div>
-                          <div><span className="text-cyan-500 font-bold uppercase">Modelo Core:</span> <span className="text-cyan-100 font-mono text-[9px]">{data.model}</span></div>
-                          <div><span className="text-cyan-500 font-bold uppercase">Contexto máx:</span> <span className="text-cyan-100 font-mono">{data.contextLimit?.toLocaleString()} tks</span></div>
-                          <div className="mt-1">
-                            <span className="text-cyan-500 font-bold uppercase block text-[8px] tracking-wide">Normas de Privacidad:</span>
-                            <span className="text-cyan-400 text-[8.5px] leading-snug">
-                              {prov === 'gemini' 
-                                ? 'Los datos de la API comercial no se entrenan. Cumple ISO 27001, RGPD completo.' 
-                                : prov === 'anthropic' 
-                                  ? 'Cero retención de logs por defecto. Privacidad SOC2 Tipo II empresarial.'
-                                  : 'Cumplimiento normativo eficiente. El tráfico no es almacenado localmente.'}
-                            </span>
-                          </div>
-                          
-                          {/* Prices per 1M tokens */}
-                          <div className="mt-2 text-cyan-300 font-mono">
-                            <span className="text-cyan-500 font-bold uppercase block text-[8px] tracking-wide">Tarifas por Millón de Tokens:</span>
-                            <div className="flex justify-between text-[8.5px]">
-                              <span>Entrada: <strong>${data.inputPrice} USD</strong></span>
-                              <span>Salida: <strong>${data.outputPrice} USD</strong></span>
-                            </div>
-                          </div>
-
-                          {/* Dynamic Active Balances from API or Console details */}
-                          {prov === 'deepseek' && (
-                            <div className="mt-2.5 text-cyan-300 font-mono border-t border-cyan-950/40 pt-1.5 bg-cyan-950/10 p-1.5 rounded border border-cyan-900/35">
-                              <span className="text-emerald-400 font-bold uppercase block text-[7.5px] tracking-widest mb-0.5">Saldo Oficial Prepago (DeepSeek API):</span>
-                              {data.balance && data.balance.is_available ? (
-                                <div className="space-y-0.5">
-                                  {data.balance.balance_infos?.map((info: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between text-[8px] leading-snug text-emerald-100">
-                                      <span>Balance ({info.currency}):</span>
-                                      <span className="font-bold text-emerald-300 font-mono">${parseFloat(info.total_balance).toFixed(2)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-[8px] text-cyan-500/80 leading-normal">
-                                  {data.hasKey 
-                                    ? 'Leyendo cuenta de DeepSeek o sin saldo activo...' 
-                                    : 'Sin clave. Añada DEEPSEEK_API_KEY en Ajustes (Secrets) para ver saldo real.'}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {prov === 'anthropic' && (
-                            <div className="mt-2.5 text-cyan-300 font-mono border-t border-cyan-950/40 pt-1.5 bg-amber-950/10 p-1.5 rounded border border-amber-900/15">
-                              <span className="text-amber-400/80 font-bold uppercase block text-[7.5px] tracking-widest mb-0.5">Saldo Prepago (Anthropic Console):</span>
-                              <div className="text-[8px] text-amber-500/80 leading-normal">
-                                Anthropic no expone balance vía API. Compruebe saldo en su panel oficial de <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-amber-300 underline hover:text-white font-bold">console.anthropic.com</a>
-                              </div>
-                            </div>
-                          )}
-
-                          {prov === 'gemini' && (
-                            <div className="mt-2.5 text-cyan-300 font-mono border-t border-cyan-950/40 pt-1.5 bg-cyan-950/10 p-1.5 rounded border border-cyan-900/15">
-                              <span className="text-cyan-400/80 font-bold uppercase block text-[7.5px] tracking-widest mb-0.5">Facturación (Google AI Studio):</span>
-                              <div className="text-[8px] text-cyan-400/70 leading-normal">
-                                Gratuito con límite de 15 RPM. Versión Premium se liquida mediante Vertex AI en <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline hover:text-white font-bold">Google Cloud Console</a>
-                              </div>
-                            </div>
+                        <span className="text-[9px] font-bold uppercase block mb-1" style={{ color: colors.text.split('text-')[1]?.replace('-300', '-400') }}>
+                          {colors.label}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {keyOk ? (
+                            <><CheckCircle2 className="w-4 h-4 text-green-400" /><span className="text-green-400 font-bold text-[10px]">CONFIGURADA</span></>
+                          ) : (
+                            <><XCircle className="w-4 h-4 text-red-500" /><span className="text-red-500 font-bold text-[10px]">SIN KEY</span></>
                           )}
                         </div>
                       </div>
-
-                      {/* Cumulative usage telemetry widget */}
-                      <div className="mt-3.5 pt-2.5 border-t border-cyan-950/60 text-[9.5px]">
-                        <span className="text-amber-500 font-bold uppercase block text-[8px] tracking-widest mb-1.5">Consumo Histórico de Sesión:</span>
-                        <div className="space-y-1 select-none">
-                          <div className="flex justify-between">
-                            <span className="text-cyan-500">Llamadas (Reqs):</span>
-                            <span className="text-cyan-100 font-bold">{stats.requestCount}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-cyan-500">Tokens Entrada:</span>
-                            <span className="text-cyan-150">{stats.promptTokens?.toLocaleString() || 0}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-cyan-500">Tokens Salida:</span>
-                            <span className="text-cyan-150">{stats.completionTokens?.toLocaleString() || 0}</span>
-                          </div>
-                          <div className="flex justify-between text-[10px] text-cyan-300 font-semibold pt-0.5 border-t border-cyan-950/30">
-                            <span>Inversión Realizada:</span>
-                            <span className="text-emerald-400">${stats.costUSD?.toFixed(6) || "0.000000"} USD</span>
-                          </div>
+                      {prov === 'deepseek' && quotaData?.deepseekBalance && (
+                        <div className="mt-2 pt-1.5 border-t border-cyan-950/40 text-[8.5px]">
+                          <span className="text-cyan-500 block">Saldo DeepSeek:</span>
+                          {quotaData.deepseekBalance.balance_infos?.map((info: any, idx: number) => (
+                            <span key={idx} className="text-emerald-300 font-bold">${parseFloat(info.total_balance).toFixed(2)} {info.currency}</span>
+                          ))}
                         </div>
-
-                        {/* Progress bar to max context window */}
-                        <div className="mt-3">
-                          <div className="flex justify-between text-[8px] text-cyan-400/70 mb-0.5 font-mono">
-                            <span>VENTANA DE CONTEXTO USADA:</span>
-                            <span>{percentUsed}%</span>
-                          </div>
-                          <div className="w-full bg-cyan-950/40 rounded-full h-1 overflow-hidden border border-cyan-900/40">
-                            <div 
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                percentUsed > 80 ? 'bg-red-500 animate-pulse' : percentUsed > 50 ? 'bg-amber-500' : 'bg-cyan-500'
-                              }`}
-                              style={{ width: `${percentUsed}%` }}
-                            ></div>
-                          </div>
-                        </div>
-
-                        {/* Web official Link button */}
-                        <a 
-                          href={data.website} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="mt-3.5 w-full block text-center bg-cyan-950/55 hover:bg-cyan-900/60 border border-cyan-800/40 py-1 rounded text-[8px] uppercase tracking-wider text-cyan-300 hover:text-white transition flex items-center justify-center gap-1 font-bold"
-                        >
-                          <Globe className="w-3 h-3 text-cyan-400" />
-                          <span>Sitio Oficial Regulaciones</span>
-                        </a>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Advanced controls - test transactions & resetting ledger */}
+              {/* Quick Models Info */}
+              <div className="bg-[#030d17] border border-cyan-950 p-3 rounded">
+                <h3 className="text-cyan-300 font-bold uppercase text-[11px] flex items-center gap-1.5 border-b border-cyan-950 pb-1.5 mb-2">
+                  <Grid className="w-3.5 h-3.5 text-amber-400" />
+                  Modelos en Acceso Rápido (Quick Models)
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {quickModels.map((modelId) => {
+                    const model = modelsList.find(m => m.id === modelId);
+                    return (
+                      <div key={modelId} className="bg-black/40 border border-cyan-950/40 p-2 rounded text-[9px]">
+                        <span className="text-cyan-300 font-bold block">{model?.name || modelId}</span>
+                        <span className="text-cyan-600 block text-[7.5px]">{model?.provider?.toUpperCase() || '—'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Advanced controls */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                 <div className="bg-[#030d17] border border-cyan-950 p-3 rounded">
                   <h3 className="text-cyan-300 font-bold lowercase tracking-wide text-[11px] uppercase flex items-center gap-1.5 border-b border-cyan-950 pb-1.5 mb-2">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    Simulador Interno de Cómputo NIM
+                    <Settings className="w-3.5 h-3.5 text-amber-400" />
+                    Acceso Rápido a Configuración
                   </h3>
                   <p className="text-[9px] text-cyan-400 mb-3 leading-relaxed">
-                    Si está operando NIM en modo simulado/diagnóstico local sin claves configuradas en Google AI Studio, puede presionar el siguiente conector para simular la transmisión aleatoria de tokens y ver la reactividad de los gráficos y barras de cuotas en tiempo real.
+                    Use el engranaje junto a los botones de modelo para elegir qué 3 modelos aparecen en la barra de acceso rápido.
                   </p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const randomInput = Math.floor(Math.random() * 800) + 150;
-                        const randomOutput = Math.floor(Math.random() * 1200) + 300;
-                        
-                        // Increment internally
-                        fetch('/api/agent', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ 
-                            prompt: `SIMULAR TRANSMISIÓN DE CRÉDITOS: ${randomInput} input / ${randomOutput} output`, 
-                            provider: provider 
-                          })
-                        }).then(() => {
-                          addLog('system', `SIMULACIÓN INYECTADA: Conectada a la telemetría de ${provider.toUpperCase()}. Se estima un consumo de ${randomInput + randomOutput} tokens.`);
-                        });
-                      }}
-                      className="flex-1 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-800 text-cyan-300 hover:text-white py-1 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1"
-                    >
-                      <RotateCw className="w-3 h-3 text-cyan-400" />
-                      SIMULAR PROCESO ({provider.toUpperCase()})
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowQuotasModal(false);
+                      setTimeout(() => {
+                        setTempQuickSelection([...quickModels]);
+                        setShowModelSettings(true);
+                      }, 150);
+                    }}
+                    className="w-full bg-amber-950/80 hover:bg-amber-900 border border-amber-800 text-amber-300 hover:text-white py-1 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1"
+                  >
+                    <Settings className="w-3 h-3 text-amber-400" />
+                    ABRIR CONFIGURACIÓN DE MODELOS
+                  </button>
                 </div>
 
                 <div className="bg-[#030d17] border border-cyan-950 p-3 rounded flex flex-col justify-between">
                   <div>
                     <h3 className="text-cyan-300 font-bold lowercase tracking-wide text-[11px] uppercase flex items-center gap-1.5 border-b border-cyan-950 pb-1.5 mb-2">
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                      Restablecer Historial de Sesión
+                      <Activity className="w-3.5 h-3.5 text-green-400" />
+                      Estado del Backend Hermes
                     </h3>
                     <p className="text-[9px] text-cyan-400 mb-3 leading-relaxed">
-                      El vaciado del balance de consumo limpiará el historial de tokens invertido y restablecerá el contador a cero dólares. No afecta el límite minute-by-minute de los proveedores.
+                      El endpoint /api/hermes/quota proporciona métricas en tiempo real del backend.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (window.confirm('¿Está seguro de que desea restablecer el balance de tokens y costos a cero en el servidor?')) {
-                        try {
-                          const res = await fetch('/api/reset-quota', { method: 'POST' });
-                          if (res.ok) {
-                            addLog('system', 'Ledger de consumo restablecido a cero por orden del Señor.');
-                            speakText('Estadísticas borradas, Señor. El balance cognitivo vuelve a estar libre.');
-                          }
-                        } catch (err) {
-                          console.error('Error resetting ledger:', err);
-                        }
-                      }
-                    }}
-                    className="w-full bg-red-950/40 hover:bg-red-950 border border-red-900 text-red-400 py-1 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1"
-                  >
-                    <Trash2 className="w-3 h-3 text-red-500" />
-                    LIMPIAR LEDGER DE COSTOS
-                  </button>
+                  <div className="space-y-1 text-[9px]">
+                    <div className="flex justify-between">
+                      <span className="text-cyan-500">Modelo activo:</span>
+                      <span className="text-cyan-100">{quotaData?.activeModel || '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-cyan-500">Proveedor:</span>
+                      <span className="text-cyan-100">{quotaData?.activeProvider || '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-cyan-500">DeepSeek Balance:</span>
+                      <span className="text-emerald-400">{quotaData?.deepseekBalance ? '✓ Disponible' : 'No consultado'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-cyan-500">Keys detectadas:</span>
+                      <span className="text-cyan-100">{Object.values(hasKeys).filter(Boolean).length}/{Object.keys(hasKeys).length}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Footer */}
             <footer className="p-3 border-t border-cyan-900/50 bg-[#01090f] text-center text-[8.5px] text-cyan-600 font-mono">
-              PORTAL DE GESTIÓN CORPORATIVA REGULATORIA NIM // VERSIÓN INTELECTUAL DE TELEMETRÍA DE RED DE MERCADO 2026
+              PORTAL DE GESTIÓN CORPORATIVA REGULATORIA NIM // HERMES BACKEND TELEMETRY 2026
             </footer>
           </div>
         </div>
