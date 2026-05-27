@@ -2066,7 +2066,7 @@ export default function App() {
                     value={soulHuman}
                     onChange={(e) => setSoulHuman(e.target.value)}
                     className="w-full text-[10px] p-1.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none resize-none"
-                    rows={3}
+                    rows={6}
                     placeholder="Describe quién eres para Hermes..."
                   />
                 </div>
@@ -2102,7 +2102,7 @@ export default function App() {
                     value={soulPersona}
                     onChange={(e) => setSoulPersona(e.target.value)}
                     className="w-full text-[10px] p-1.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none resize-none"
-                    rows={3}
+                    rows={6}
                     placeholder="Define cómo debe comportarse el agente..."
                   />
                 </div>
@@ -2138,7 +2138,7 @@ export default function App() {
                     value={soulTask}
                     onChange={(e) => setSoulTask(e.target.value)}
                     className="w-full text-[10px] p-1.5 bg-[#010912] border border-cyan-950 text-cyan-100 rounded focus:border-cyan-500 font-mono focus:outline-none resize-none"
-                    rows={3}
+                    rows={6}
                     placeholder="Define la misión activa del agente..."
                   />
                 </div>
