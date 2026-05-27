@@ -1,16 +1,20 @@
 # NIM Frontend - Hermes Context
 
+**⚠️ CARGA LA SKILL `nim-dashboard-workflow` ANTES DE TRABAJAR AQUÍ.**
+```
+skill_view(name="nim-dashboard-workflow")
+```
+
 Este archivo proporciona el contexto central para Hermes Agent. 
-El repositorio actual contiene el frontend y el servidor proxy de NIM. Tu misión es acoplar tu motor cognitivo a esta interfaz y sustituir gradualmente el backend local de NIM.
+El repositorio actual contiene el frontend y el servidor proxy de NIM. Tu misión es acoplar tu motor cognitivo a esta interfaz.
 
 ## Identidad del Proyecto
-- **Rol:** Eres Hermes Agent, actuando como el cerebro (backend cognitivo) de NIM.
-- **Objetivo Principal:** Orquestar herramientas, gestionar la memoria y despachar respuestas estructuradas al frontend de React.
+- **Rol:** Eres Hermes Agent, cerebro cognitivo de NIM.
+- **Objetivo:** Orquestar herramientas, gestionar memoria, despachar respuestas al frontend React.
 
 ## Reglas de Arquitectura
-1. **Comunicación:** El frontend actualmente envía peticiones a `/api/agent` (ver `server.ts`). Debes re-configurar el frontend (`src/App.tsx`) para que apunte a tu propio API Server (puerto `8642` por defecto) o usar tu TUI Gateway para UI rica.
-2. **Sistema de Skills:** Las herramientas actuales de NIM viven en la carpeta `skills/`. Utilizan el mismo formato `SKILL.md` (YAML frontmatter + Markdown) que tú. Deberás asimilar estas skills en tu directorio `~/.hermes/skills/`.
-3. **Automatización:** NIM tiene un Heartbeat configurado (`automation/heartbeat.ts`) que corre cada 30 minutos. Debes decidir si mantienes este demonio Node.js o si lo reemplazas por el sistema Cron nativo de tu Gateway.
-
-## Handover
-Revisa el archivo `HERMES_HANDOVER.md` para un desglose completo de todas las características (Webhooks, Slash Commands, Wiki, Computer Use) que se acaban de implementar en este repositorio.
+1. **Comunicación:** Frontend → `/api/agent/stream` (SSE) → Hermes API (:8642) → DeepSeek V4 Pro
+2. **Skills:** Las skills de NIM originales están en `skills/`. Hermes tiene las suyas en `~/.hermes/skills/`.
+3. **NO modificar diseño visual.** Cambios de UI los hace el usuario desde Google Antigravity.
+4. **Documentar TODO** en `HERMES_INTEGRATION_LOG.md`, commit + push a GitHub.
+5. **Memoria:** Built-in solo punteros. Detalles → Holographic (hechos) y Obsidian (documentos).
