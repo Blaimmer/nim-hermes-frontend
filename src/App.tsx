@@ -616,17 +616,27 @@ export default function App() {
 
   // Sound synthesis with reactive Energy Orb and custom muting integrations
   const speakText = (text: string) => {
-    if (isMuted || ttsMuted || !('speechSynthesis' in window)) {
+    console.log('[TTS] speakText llamado con', text.length, 'caracteres');
+    
+    if (!text || text.trim().length === 0) {
+      console.log('[TTS] Texto vacío, ignorando');
+      return;
+    }
+    
+    if (isMuted || ttsMuted) {
+      console.log('[TTS] Silenciado (mute/ttsMuted)');
       setStatus('STANDBY');
       setOrbState('idle');
       return;
     }
-
-    // Stop fast repeated speaking of identical segments
-    if (lastSpokenRef?.current === text) return;
-    if (lastSpokenRef) {
-      lastSpokenRef.current = text;
+    
+    if (!('speechSynthesis' in window)) {
+      console.log('[TTS] speechSynthesis no disponible');
+      return;
     }
+
+    // Resetear el ref siempre para evitar bloqueos
+    if (lastSpokenRef) lastSpokenRef.current = '';
 
     const cleanTextForSpeech = (rawText: string) => {
       if (!rawText) return "";
