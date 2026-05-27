@@ -716,6 +716,37 @@ export default function App() {
       const decoder = new TextDecoder();
       let buffer = '';
       let accumulatedContent = '';
+      let spokenUpTo = 0; // índice hasta donde ya se habló
+
+      // Detecta frases completas (terminan en . ! ? , o salto de línea doble)
+      const speakNewPhrases = (forceFinal = false) => {
+        const text = accumulatedContent;
+        if (text.length <= spokenUpTo) return;
+
+        // Buscar el último corte natural de frase en el texto nuevo
+        const newText = text.slice(spokenUpTo);
+        const breakMatch = newText.match(/[.!?](?:\s+|$)|,\s|\n\n/);
+        
+        if (breakMatch && breakMatch.index !== undefined) {
+          const endIdx = spokenUpTo + breakMatch.index + breakMatch[0].length;
+          if (endIdx > spokenUpTo) {
+            const phrase = text.slice(spokenUpTo, endIdx).trim();
+            if (phrase.length > 10) { // evitar frases muy cortas
+              spokenUpTo = endIdx;
+              lastSpokenRef.current = '';
+              speakText(phrase);
+            }
+          }
+        } else if (forceFinal) {
+          // Al final, hablar lo que queda
+          const remaining = text.slice(spokenUpTo).trim();
+          if (remaining.length > 0) {
+            spokenUpTo = text.length;
+            lastSpokenRef.current = '';
+            speakText(remaining);
+          }
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -734,20 +765,20 @@ export default function App() {
 
             if (event.type === 'chunk') {
               accumulatedContent += event.content;
-              // Actualizar el mensaje en tiempo real — efecto "muletilla"
+              // Actualizar el mensaje en tiempo real
               setChatMessages(prev => prev.map(m =>
                 m.id === streamingMsgId ? { ...m, text: accumulatedContent } : m
               ));
+              // Hablar frases completas que se hayan formado
+              speakNewPhrases();
             } else if (event.type === 'done') {
               accumulatedContent = event.response || accumulatedContent;
               setChatMessages(prev => prev.map(m =>
                 m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
               ));
               addLog('response', `HERMES: "${accumulatedContent.slice(0, 100)}..."`);
-              // Limpiar lastSpokenRef para evitar bloqueo de TTS
-              lastSpokenRef.current = '';
-              // Pequeña pausa para que React procese el estado antes del TTS
-              setTimeout(() => speakText(accumulatedContent), 50);
+              // Forzar a hablar todo lo que falta
+              speakNewPhrases(true);
               return;
             } else if (event.type === 'error') {
               throw new Error(event.message);
@@ -758,13 +789,12 @@ export default function App() {
         }
       }
 
-      // Si el stream terminó sin evento 'done', finalizar igual
+      // Stream terminó sin 'done'
       setChatMessages(prev => prev.map(m =>
         m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
       ));
       if (accumulatedContent) {
-        lastSpokenRef.current = '';
-        setTimeout(() => speakText(accumulatedContent), 50);
+        speakNewPhrases(true);
       }
     } catch (e: any) {
       console.error('Streaming falló, usando fallback no-streaming:', e.message);
