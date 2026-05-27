@@ -59,6 +59,13 @@ export default function App() {
   const [customModelTesting, setCustomModelTesting] = useState(false);
   const [customModelDeleting, setCustomModelDeleting] = useState<string | null>(null);
 
+  // Inline API key configuration for models without keys
+  const [configuringModelId, setConfiguringModelId] = useState<string | null>(null);
+  const [configuringApiKey, setConfiguringApiKey] = useState('');
+  const [configuringTestResult, setConfiguringTestResult] = useState<{ok: boolean; message: string} | null>(null);
+  const [configuringTesting, setConfiguringTesting] = useState(false);
+  const [configuringSaving, setConfiguringSaving] = useState(false);
+
   // Server-side audited system information state
   const [serverSysInfo, setServerSysInfo] = useState<{
     platform: string;
@@ -1250,7 +1257,7 @@ export default function App() {
             <div className="grid grid-cols-3 gap-1.5 flex-1">
               {quickModels.map((modelId, idx) => {
                 const model = modelsList.find(m => m.id === modelId);
-                const modelHasKey = model ? (hasKeys[model.provider] ?? true) : true;
+                const modelHasKey = model ? (hasKeys[model.provider] ?? false) : true;
                 const isActive = activeModel === modelId;
                 
                 if (!model) {
@@ -1430,78 +1437,221 @@ export default function App() {
               </div>
               {modelsList.map((model) => {
                 const isSelected = tempQuickSelection.includes(model.id);
-                const modelHasKey = hasKeys[model.provider] ?? true;
+                const modelHasKey = hasKeys[model.provider] ?? false;
+                const isConfiguring = configuringModelId === model.id;
                 const providerColors: Record<string, string> = {
                   deepseek: 'text-cyan-400', gemini: 'text-amber-400', 
                   anthropic: 'text-purple-400', openai: 'text-green-400',
                 };
                 return (
-                  <div
-                    key={model.id}
-                    className={`flex items-center justify-between p-2.5 rounded border transition cursor-pointer ${
-                      isSelected 
-                        ? 'border-amber-500/60 bg-amber-500/10' 
-                        : 'border-cyan-950/40 bg-black/30 hover:border-cyan-900/60'
-                    } ${!modelHasKey ? 'opacity-50' : ''}`}
-                    onClick={() => {
-                      if (isSelected) {
-                        setTempQuickSelection(prev => prev.filter(id => id !== model.id));
-                      } else if (tempQuickSelection.length < 3) {
-                        setTempQuickSelection(prev => [...prev, model.id]);
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-cyan-900'}`}></div>
-                      <div>
-                        <span className={`text-[11px] font-mono font-bold uppercase ${providerColors[model.provider] || 'text-cyan-300'}`}>
-                          {model.name}
-                        </span>
-                        <span className="text-[8px] text-cyan-600 font-mono block">{model.provider.toUpperCase()}</span>
+                  <div key={model.id}>
+                    <div
+                      className={`flex items-center justify-between p-2.5 rounded border transition ${
+                        isSelected 
+                          ? 'border-amber-500/60 bg-amber-500/10' 
+                          : 'border-cyan-950/40 bg-black/30 hover:border-cyan-900/60'
+                      } ${!modelHasKey ? 'opacity-50 hover:opacity-70' : 'cursor-pointer'}`}
+                      onClick={() => {
+                        if (!modelHasKey) {
+                          // Expand inline API key form instead of toggling selection
+                          setConfiguringModelId(isConfiguring ? null : model.id);
+                          setConfiguringApiKey('');
+                          setConfiguringTestResult(null);
+                          return;
+                        }
+                        if (isSelected) {
+                          setTempQuickSelection(prev => prev.filter(id => id !== model.id));
+                        } else if (tempQuickSelection.length < 3) {
+                          setTempQuickSelection(prev => [...prev, model.id]);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-amber-400' : 'bg-cyan-900'}`}></div>
+                        <div>
+                          <span className={`text-[11px] font-mono font-bold uppercase ${providerColors[model.provider] || 'text-cyan-300'}`}>
+                            {model.name}
+                          </span>
+                          <span className="text-[8px] text-cyan-600 font-mono block">{model.provider.toUpperCase()}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {model.custom && (
+                          <button
+                            type="button"
+                            disabled={customModelDeleting === model.id}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!confirm(`¿Eliminar modelo "${model.name}"?`)) return;
+                              setCustomModelDeleting(model.id);
+                              try {
+                                const res = await fetch(`/api/hermes/remove-model/${encodeURIComponent(model.id)}`, { method: 'DELETE' });
+                                if (res.ok) {
+                                  setModelsList(prev => prev.filter(m => m.id !== model.id));
+                                  setTempQuickSelection(prev => prev.filter(id => id !== model.id));
+                                  addLog('system', `Modelo custom "${model.name}" eliminado.`);
+                                } else {
+                                  const err = await res.json();
+                                  addLog('system', `Error al eliminar: ${err.error || 'Desconocido'}`);
+                                }
+                              } catch (e: any) {
+                                addLog('system', `Error al eliminar modelo: ${e.message}`);
+                              } finally {
+                                setCustomModelDeleting(null);
+                              }
+                            }}
+                            className="text-red-500 hover:text-red-300 hover:bg-red-950/40 p-0.5 rounded transition"
+                            title={`Eliminar ${model.name}`}
+                          >
+                            {customModelDeleting === model.id ? (
+                              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        )}
+                        {!modelHasKey && <span className="text-[7.5px] text-red-500 font-mono">⚠ SIN KEY</span>}
+                        {isSelected ? (
+                          <CheckCircle2 className="w-4 h-4 text-amber-400" />
+                        ) : (
+                          <div className="w-4 h-4 border border-cyan-900 rounded"></div>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {model.custom && (
-                        <button
-                          type="button"
-                          disabled={customModelDeleting === model.id}
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if (!confirm(`¿Eliminar modelo "${model.name}"?`)) return;
-                            setCustomModelDeleting(model.id);
-                            try {
-                              const res = await fetch(`/api/hermes/remove-model/${encodeURIComponent(model.id)}`, { method: 'DELETE' });
-                              if (res.ok) {
-                                setModelsList(prev => prev.filter(m => m.id !== model.id));
-                                setTempQuickSelection(prev => prev.filter(id => id !== model.id));
-                                addLog('system', `Modelo custom "${model.name}" eliminado.`);
-                              } else {
-                                const err = await res.json();
-                                addLog('system', `Error al eliminar: ${err.error || 'Desconocido'}`);
-                              }
-                            } catch (e: any) {
-                              addLog('system', `Error al eliminar modelo: ${e.message}`);
-                            } finally {
-                              setCustomModelDeleting(null);
-                            }
+
+                    {/* Inline API key mini-form for models without a key */}
+                    {isConfiguring && !modelHasKey && (
+                      <div className="mt-1 p-3 rounded border bg-amber-950/10 border-amber-900/30 space-y-2">
+                        <p className="text-[9px] font-mono text-amber-300/80">
+                          Configurar API key para <strong>{model.name}</strong> ({model.provider})
+                        </p>
+                        <input
+                          type="password"
+                          placeholder={`API Key para ${model.provider}`}
+                          value={configuringApiKey}
+                          onChange={(e) => {
+                            setConfiguringApiKey(e.target.value);
+                            setConfiguringTestResult(null);
                           }}
-                          className="text-red-500 hover:text-red-300 hover:bg-red-950/40 p-0.5 rounded transition"
-                          title={`Eliminar ${model.name}`}
-                        >
-                          {customModelDeleting === model.id ? (
-                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      )}
-                      {!modelHasKey && <span className="text-[7.5px] text-red-500 font-mono">⚠ SIN KEY</span>}
-                      {isSelected ? (
-                        <CheckCircle2 className="w-4 h-4 text-amber-400" />
-                      ) : (
-                        <div className="w-4 h-4 border border-cyan-900 rounded"></div>
-                      )}
-                    </div>
+                          className="bg-black/60 border border-cyan-900/40 rounded text-cyan-200 text-xs font-mono px-2 py-1 w-full placeholder:text-cyan-700 focus:border-cyan-500 focus:outline-none"
+                        />
+
+                        {/* Test result */}
+                        {configuringTestResult && (
+                          <div className={`flex items-center gap-1.5 text-[9px] font-mono p-1.5 rounded border ${
+                            configuringTestResult.ok
+                              ? 'text-green-400 border-green-900/50 bg-green-950/20'
+                              : 'text-red-400 border-red-900/50 bg-red-950/20'
+                          }`}>
+                            {configuringTestResult.ok ? (
+                              <CheckCircle2 className="w-3 h-3 text-green-400" />
+                            ) : (
+                              <XCircle className="w-3 h-3 text-red-400" />
+                            )}
+                            {configuringTestResult.message}
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={!configuringApiKey || configuringTesting}
+                            onClick={async () => {
+                              setConfiguringTesting(true);
+                              setConfiguringTestResult(null);
+                              try {
+                                const res = await fetch('/api/hermes/test-model', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    provider: model.provider,
+                                    modelId: model.id,
+                                    apiKey: configuringApiKey,
+                                  }),
+                                });
+                                const data = await res.json();
+                                setConfiguringTestResult({
+                                  ok: data.success,
+                                  message: data.message || (data.success ? 'Conexión exitosa' : 'Falló la conexión'),
+                                });
+                              } catch (e: any) {
+                                setConfiguringTestResult({ ok: false, message: `Error: ${e.message}` });
+                              } finally {
+                                setConfiguringTesting(false);
+                              }
+                            }}
+                            className={`flex-1 border py-1.5 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1 ${
+                              configuringApiKey && !configuringTesting
+                                ? 'border-green-700/60 text-green-400 hover:bg-green-950/30'
+                                : 'border-gray-800 text-gray-700 cursor-not-allowed'
+                            }`}
+                          >
+                            {configuringTesting ? (
+                              <RotateCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Activity className="w-3 h-3" />
+                            )}
+                            Testear
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!configuringApiKey || configuringSaving}
+                            onClick={async () => {
+                              setConfiguringSaving(true);
+                              try {
+                                const res = await fetch('/api/hermes/set-key', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    provider: model.provider,
+                                    apiKey: configuringApiKey,
+                                  }),
+                                });
+                                const data = await res.json();
+                                if (res.ok) {
+                                  // Update hasKeys immediately
+                                  setHasKeys(prev => ({ ...prev, [model.provider]: true }));
+                                  addLog('system', `API key para ${model.provider} configurada exitosamente.`);
+                                  // Close the form
+                                  setConfiguringModelId(null);
+                                  setConfiguringApiKey('');
+                                  setConfiguringTestResult(null);
+                                } else {
+                                  addLog('system', `Error al guardar: ${data.error || 'Desconocido'}`);
+                                }
+                              } catch (e: any) {
+                                addLog('system', `Error al guardar API key: ${e.message}`);
+                              } finally {
+                                setConfiguringSaving(false);
+                              }
+                            }}
+                            className={`flex-1 border py-1.5 rounded text-[9px] uppercase font-bold transition flex items-center justify-center gap-1 ${
+                              configuringApiKey && !configuringSaving
+                                ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30'
+                                : 'border-gray-800 text-gray-700 cursor-not-allowed'
+                            }`}
+                          >
+                            {configuringSaving ? (
+                              <RotateCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3" />
+                            )}
+                            Guardar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfiguringModelId(null);
+                              setConfiguringApiKey('');
+                              setConfiguringTestResult(null);
+                            }}
+                            className="border border-red-900/40 text-red-400 hover:bg-red-950/30 py-1.5 px-3 rounded text-[9px] uppercase font-bold transition"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

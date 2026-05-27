@@ -1155,6 +1155,27 @@ app.post('/api/hermes/test-model', async (req, res) => {
   }
 });
 
+// Configurar API key para un provider existente (sin crear modelo nuevo)
+app.post('/api/hermes/set-key', async (req, res) => {
+  const { provider, apiKey } = req.body;
+  if (!provider || !apiKey) return res.status(400).json({ error: 'Faltan provider y apiKey' });
+
+  // Guardar en ~/.hermes/.env
+  const envKey = `${provider.toUpperCase()}_API_KEY`;
+  const hermesEnvPath = path.join(os.homedir(), '.hermes', '.env');
+  let envContent = existsSync(hermesEnvPath) ? fs.readFileSync(hermesEnvPath, 'utf-8') : '';
+  const regex = new RegExp(`^${envKey}=.*$`, 'm');
+  if (regex.test(envContent)) {
+    envContent = envContent.replace(regex, `${envKey}=${apiKey}`);
+  } else {
+    envContent += `\n${envKey}=${apiKey}`;
+  }
+  fs.writeFileSync(hermesEnvPath, envContent.trim() + '\n', 'utf-8');
+  process.env[envKey] = apiKey;
+
+  res.json({ success: true, message: `API key para ${provider} configurada` });
+});
+
 // Eliminar modelo custom
 app.delete('/api/hermes/remove-model/:id', (req, res) => {
   const modelId = req.params.id;
