@@ -686,75 +686,112 @@ export default function App() {
     }
 
     setStatus('THINKING');
+    setOrbState('thinking');
     
-    const activeSkillsList = skills
-      .filter(s => s.isEnabled && s.status === 'Activa')
-      .map(s => s.name);
+    // ID para el mensaje en streaming que se actualiza en tiempo real
+    const streamingMsgId = `chat-stream-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    // Agregar placeholder que se irá llenando con las muletillas
+    setChatMessages(prev => [...prev, {
+      id: streamingMsgId,
+      sender: 'nim',
+      text: '● Procesando...',
+      timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+      modelUsed: 'HERMES',
+      streaming: true,
+    }]);
 
     try {
-      const response = await fetch('/api/agent', {
+      const response = await fetch('/api/agent/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: promptToSend,
-          provider: provider,
-          activeSkills: activeSkillsList,
-          clientSystemInfo: detectSystemInfo(),
-        }),
+        body: JSON.stringify({ prompt: promptToSend }),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP Error Status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const data = await response.json();
-      
-      // Update Call Counts dynamically
-      if (data.action) {
-        const lowerAct = data.action.toLowerCase();
-        setSkills(prev => prev.map(s => {
-          if (lowerAct.includes(s.name.toLowerCase()) || lowerAct.includes(s.id.toLowerCase())) {
-            return { ...s, callCount: s.callCount + 1 };
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No se pudo leer el stream');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulatedContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+
+          try {
+            const event = JSON.parse(trimmed.slice(6));
+
+            if (event.type === 'chunk') {
+              accumulatedContent += event.content;
+              // Actualizar el mensaje en tiempo real — efecto "muletilla"
+              setChatMessages(prev => prev.map(m =>
+                m.id === streamingMsgId ? { ...m, text: accumulatedContent } : m
+              ));
+            } else if (event.type === 'done') {
+              accumulatedContent = event.response || accumulatedContent;
+              setChatMessages(prev => prev.map(m =>
+                m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
+              ));
+              setStatus('STANDBY');
+              setOrbState('idle');
+              addLog('response', `HERMES: "${accumulatedContent.slice(0, 100)}..."`);
+              speakText(accumulatedContent);
+              return;
+            } else if (event.type === 'error') {
+              throw new Error(event.message);
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
           }
-          return s;
-        }));
+        }
       }
 
-      if (data.thought) {
-        addLog('thought', `[PENSAMIENTO DE ${provider.toUpperCase()}] ${data.thought}`);
+      // Si el stream terminó sin evento 'done', finalizar igual
+      setChatMessages(prev => prev.map(m =>
+        m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
+      ));
+      setStatus('STANDBY');
+      setOrbState('idle');
+      if (accumulatedContent) {
+        speakText(accumulatedContent);
       }
-      if (data.action) {
-        addLog('action', `[ACCIÓN DILIGENTE] ${data.action}`);
-      }
-      if (data.observation) {
-        addLog('observation', `[OBSERVACIÓN SENSOR] ${data.observation}`);
-      }
-
-      // SERVER-SIDE TOOL EXECUTION: Tools are executed by the server in the agentic loop.
-      // The server returns the real observation and response after completing all steps.
-      // We only update local UI state for IoT/vision widgets if the observation mentions them.
-      if (data.observation && data.observation !== 'Ejecutado de forma directa sin herramientas adicionales.') {
-        addLog('observation', `[OBSERVACIÓN REAL DEL SERVIDOR] ${data.observation}`);
-      }
-
-      // Always display the real response from the server
-      if (data.response) {
-        addLog('response', `NIM: "${data.response}"`);
-        addChatMessage('nim', data.response);
-        speakText(data.response);
-      } else {
-        setStatus('STANDBY');
-      }
-
     } catch (e: any) {
-      console.error(e);
-      addLog('system', `Pérdida temporal de enlace cuántico NIM: ${e.message}`);
-      setStatus('ERROR');
-      
-      const errMsg = 'Señor, experimenté una interrupción de microcanales con el núcleo de Google AI. Por favor verifique mi clave API registrada o reinicie el canal de red simulado.';
-      addLog('response', `NIM: ${errMsg}`);
-      addChatMessage('nim', errMsg);
-      speakText(errMsg);
+      console.error('Streaming falló, usando fallback no-streaming:', e.message);
+      // Eliminar el placeholder de streaming
+      setChatMessages(prev => prev.filter(m => m.id !== streamingMsgId));
+      // Fallback al endpoint no-streaming
+      try {
+        const fbRes = await fetch('/api/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptToSend }),
+        });
+        if (fbRes.ok) {
+          const data = await fbRes.json();
+          if (data.response) {
+            addLog('response', `HERMES: "${data.response}"`);
+            addChatMessage('nim', data.response);
+            speakText(data.response);
+          }
+        }
+      } catch (fbErr: any) {
+        addLog('system', `Error en streaming y fallback: ${fbErr.message}`);
+        setStatus('ERROR');
+        const errMsg = 'Señor, hubo una interrupción en mis sistemas. ¿Podría intentarlo de nuevo?';
+        addChatMessage('nim', errMsg);
+        speakText(errMsg);
+      }
     }
   };
 

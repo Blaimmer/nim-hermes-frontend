@@ -874,6 +874,86 @@ app.post('/api/agent', async (req, res) => {
   }
 });
 
+// Streaming endpoint — SSE en tiempo real para conversación natural con muletillas
+app.post('/api/agent/stream', async (req, res) => {
+  const { prompt } = req.body;
+  if (!prompt) return res.status(400).json({ error: 'La instrucción es requerida.' });
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const send = (data: any) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  try {
+    const hermesRes = await fetch('http://localhost:8642/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'hermes-agent',
+        messages: [{ role: 'user', content: prompt }],
+        stream: true,
+      }),
+    });
+
+    if (!hermesRes.ok || !hermesRes.body) {
+      send({ type: 'error', message: `Hermes API: ${hermesRes.status}` });
+      return res.end();
+    }
+
+    const reader = hermesRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullContent = '';
+
+    // Enviar evento de inicio para que el frontend sepa que empezamos
+    send({ type: 'start' });
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const raw = trimmed.slice(6);
+        if (raw === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(raw);
+          const delta = parsed.choices?.[0]?.delta;
+          const finish = parsed.choices?.[0]?.finish_reason;
+
+          if (delta?.content) {
+            fullContent += delta.content;
+            send({ type: 'chunk', content: delta.content });
+          }
+
+          if (finish === 'stop') {
+            send({ type: 'done', response: fullContent });
+          }
+        } catch (e) { /* ignorar líneas no-JSON */ }
+      }
+    }
+
+    // Si llegamos aquí sin done, enviarlo igual
+    if (fullContent) {
+      send({ type: 'done', response: fullContent });
+    }
+    res.end();
+  } catch (e: any) {
+    send({ type: 'error', message: e.message });
+    res.end();
+  }
+});
+
 // ==========================================
 // AGENT CORE & ARCHITECTURE ENDPOINTS
 // ==========================================

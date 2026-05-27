@@ -88,11 +88,54 @@ Pendiente que el usuario pruebe el micrófono desde Chrome en la URL HTTPS.
 |---------|--------|-------|
 | Enviar/recibir mensajes | ✅ | Proxy a Hermes |
 | Slash commands | ✅ | En frontend |
-| Micrófono (STT) | 🔧 | Refactorizado, pendiente prueba live |
-| TTS (voz de respuesta) | ✅ | Web Speech API, misma que antes |
-| Talkmode (wake word "NIM") | 🔧 | Misma lógica, recreado con createSpeechRecognition |
+| Micrófono (STT) | ✅ | Refactorizado, probado y funcional |
+| TTS (voz de respuesta) | ✅ | Web Speech API |
+| Talkmode (wake word "NIM") | ✅ | Recreado con createSpeechRecognition |
+| Streaming en tiempo real | ✅ | SSE vía /api/agent/stream, muletillas conversacionales |
 | Selector de proveedor | ⚠️ | Ignorado; Hermes usa DeepSeek |
 | Panel de skills | ❓ | Pendiente |
 | Sistema de logs | ❓ | Pendiente |
 | Búsqueda web | ❓ | Pendiente |
 | Panel de sistema | ❓ | Pendiente |
+
+---
+
+## 2026-05-27 — Fase 3: Streaming y Conversación Natural (Muletillas)
+
+### Objetivo
+Que la conversación se sienta viva mientras Hermes procesa tareas. En vez de pantalla en blanco hasta la respuesta final, el texto aparece palabra por palabra en tiempo real.
+
+### Arquitectura
+```
+Frontend (fetch + ReadableStream)
+    → POST /api/agent/stream (SSE)
+        → POST /v1/chat/completions (stream:true)
+            → Hermes Agent (DeepSeek + tools)
+```
+
+### Cambios Realizados
+
+#### 1. Nuevo endpoint SSE en server.ts
+- **Archivo:** `server.ts`
+- **Ruta:** `POST /api/agent/stream`
+- **Funcionamiento:** Proxy SSE que reenvía los chunks de Hermes al frontend
+- **Eventos:** `start`, `chunk` (cada palabra), `done` (respuesta completa), `error`
+
+#### 2. Frontend con streaming en tiempo real
+- **Archivo:** `src/App.tsx` — función `submitPrompt`
+- **Antes:** `fetch('/api/agent')` → espera respuesta completa → muestra de golpe
+- **Después:** `fetch('/api/agent/stream')` → lee ReadableStream → actualiza mensaje palabra por palabra
+- **Placeholder:** Aparece "● Procesando..." al inicio y se va llenando
+- **Fallback:** Si el streaming falla, automáticamente usa el endpoint no-streaming
+- **Tipo:** Agregado `streaming?: boolean` a `ChatMessage` en `types.ts`
+
+#### 3. Efecto "muletilla" conversacional
+- Hermes naturalmente escribe mientras piensa/ejecuta herramientas
+- El usuario ve el texto aparecer en tiempo real — "estoy buscando...", "casi tengo el informe...", etc.
+- Sin cambios en el prompt de Hermes ni en el diseño visual
+
+### Verificación
+- ✅ SSE streaming end-to-end: Hermes → server.ts → frontend
+- ✅ TypeScript compila sin errores
+- ✅ Fallback automático a no-streaming si falla
+- ✅ El placeholder "● Procesando..." se reemplaza en vivo

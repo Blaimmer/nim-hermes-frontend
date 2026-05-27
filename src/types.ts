@@ -15,6 +15,7 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   modelUsed?: string;
+  streaming?: boolean;
 }
 
 export interface Skill {
