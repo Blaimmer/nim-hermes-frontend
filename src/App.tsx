@@ -962,10 +962,10 @@ export default function App() {
     }
   };
 
-  // Selected skill config object — con fallback seguro mientras carga
+  // Selected skill config object — con defaults seguros mientras carga
   const selectedSkill = skills.length > 0 
     ? (skills.find(s => s.id === selectedSkillId) || skills[0])
-    : null;
+    : { id: 'loading', name: 'Cargando...', status: 'Activa', isEnabled: false, description: 'Cargando skills desde Hermes...', callCount: 0 };
 
   const handleToggleSkillEnabled = (id: string) => {
     setSkills(prev => prev.map(s => {
@@ -2355,7 +2355,6 @@ export default function App() {
                     <p className="text-green-400 font-bold text-[8px] tracking-widest uppercase mb-0.5">OBSERVACION RETORNADA (CUERPO):</p>
                     <p className="text-green-100">{activeToolCall.observation}</p>
                   </div>
-                )}
               </div>
             </section>
           )}
@@ -2854,7 +2853,7 @@ export default function App() {
                         EJECUTAR PIPELINE SIMULADO
                       </button>
                     </div>
-                  )}
+                )}
                 </div>
               </div>
             </div>
