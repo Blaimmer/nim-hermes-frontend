@@ -2,9 +2,10 @@
 <img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>
 
-# Run and deploy your AI Studio app
+# Agentic NIM
+El motor principal cognitivo de NIM, ahora adaptado para ser controlado por **Hermes Agent**.
 
-This contains everything you need to run your app locally.
+> **⚠️ AVISO DE TRANSICIÓN:** La lógica y orquestación de este proyecto están siendo migradas para que Hermes Agent actúe como el cerebro. Por favor, revisa `HERMES_HANDOVER.md` y `AGENTS.md` para las instrucciones de integración del frontend.
 
 View your app in AI Studio: https://ai.studio/apps/8ffcd4b5-399f-4ebe-ab64-0ae2854f39da
 
