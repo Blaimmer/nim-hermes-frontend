@@ -762,50 +762,60 @@ export default function App() {
       let accumulatedContent = '';
       let spokenUpTo = 0; // índice hasta donde ya se habló
 
+      // Función interna para hablar SIN cancelar (las frases se encolan)
+      const speakPhrase = (phraseText: string) => {
+        if (isMuted || ttsMuted || !('speechSynthesis' in window)) return;
+        const clean = phraseText
+          .replace(/```[\s\S]*?```/g, "")
+          .replace(/[*_~`#[\]{}]/g, "")
+          .replace(/https?:\/\/[^\s]+/g, "")
+          .replace(/\n/g, " ")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+        if (!clean || clean.length < 3) return;
+        const u = new SpeechSynthesisUtterance(clean);
+        u.lang = 'es-ES';
+        u.rate = 1.05;
+        u.pitch = 0.95;
+        const voices = window.speechSynthesis.getVoices();
+        const esVoice = voices.find((v: any) => v.lang.startsWith('es-'));
+        if (esVoice) u.voice = esVoice;
+        window.speechSynthesis.speak(u);
+      };
+
       // Detecta frases completas y las habla sin cancelar entre sí
       const speakNewPhrases = (forceFinal = false) => {
         const text = accumulatedContent;
         if (text.length <= spokenUpTo) return;
 
-        // Función interna para hablar SIN cancelar (las frases se encolan)
-        const speakPhrase = (phraseText: string) => {
-          if (isMuted || ttsMuted || !('speechSynthesis' in window)) return;
-          const clean = phraseText
-            .replace(/```[\s\S]*?```/g, "")
-            .replace(/[*_~`#[\]{}]/g, "")
-            .replace(/https?:\/\/[^\s]+/g, "")
-            .replace(/\n/g, " ")
-            .replace(/\s{2,}/g, " ")
-            .trim();
-          if (!clean || clean.length < 3) return;
-          const u = new SpeechSynthesisUtterance(clean);
-          u.lang = 'es-ES';
-          u.rate = 1.05;
-          u.pitch = 0.95;
-          const voices = window.speechSynthesis.getVoices();
-          const esVoice = voices.find((v: any) => v.lang.startsWith('es-'));
-          if (esVoice) u.voice = esVoice;
-          window.speechSynthesis.speak(u);
-        };
+        // Bucle para extraer y vocalizar TODAS las frases completas disponibles
+        while (true) {
+          const newText = text.slice(spokenUpTo);
+          if (!newText) break;
 
-        // Buscar cortes naturales: puntuación fuerte, salto de línea, o dos puntos
-        const newText = text.slice(spokenUpTo);
-        const breakMatch = newText.match(/[.!?](?:\s+|$)|[:,]\s|\n/);
-        
-        if (breakMatch && breakMatch.index !== undefined) {
-          const endIdx = spokenUpTo + breakMatch.index + breakMatch[0].length;
-          if (endIdx > spokenUpTo) {
-            const phrase = text.slice(spokenUpTo, endIdx).trim();
-            if (phrase.length > 10) {
-              spokenUpTo = endIdx;
-              speakPhrase(phrase);
+          const breakMatch = newText.match(/[.!?](?:\s+|$)|[:,]\s|\n/);
+          
+          if (breakMatch && breakMatch.index !== undefined) {
+            const endIdx = spokenUpTo + breakMatch.index + breakMatch[0].length;
+            if (endIdx > spokenUpTo) {
+              const phrase = text.slice(spokenUpTo, endIdx).trim();
+              spokenUpTo = endIdx; // Siempre avanzar, sin importar la longitud
+              if (phrase.length > 0) {
+                speakPhrase(phrase);
+              }
+              continue;
+            } else {
+              break;
             }
-          }
-        } else if (forceFinal) {
-          const remaining = text.slice(spokenUpTo).trim();
-          if (remaining.length > 0) {
-            spokenUpTo = text.length;
-            speakPhrase(remaining);
+          } else if (forceFinal) {
+            const remaining = text.slice(spokenUpTo).trim();
+            spokenUpTo = text.length; // Avanzar hasta el final
+            if (remaining.length > 0) {
+              speakPhrase(remaining);
+            }
+            break;
+          } else {
+            break; // No hay más cortes y no es el final, esperamos más chunks
           }
         }
       };
@@ -835,8 +845,9 @@ export default function App() {
               speakNewPhrases();
             } else if (event.type === 'thought') {
               addLog('thought', event.message);
-              // Mantener el orbe activo, pero NO hacer TTS (interfiere con la respuesta)
               setOrbState('thinking');
+              // Vocalizar el pensamiento (ej. "Realizando tarea...") para no dejar en silencio
+              speakPhrase(event.message);
             } else if (event.type === 'start') {
               addLog('system', 'Iniciando procesamiento...');
             } else if (event.type === 'done') {
