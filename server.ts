@@ -840,19 +840,33 @@ app.post('/api/webhook/execute', async (req, res) => {
 
 // REST Api endpoint — proxy directo a Hermes Agent (cerebro cognitivo)
 app.post('/api/agent', async (req, res) => {
-  const { prompt } = req.body;
+  const { prompt, history } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ error: 'La instrucción es requerida.' });
   }
 
   try {
+    // Construir historial
+    const messages: any[] = [{
+      role: 'system',
+      content: 'Eres NIM, un asistente agéntico elite. Responde en español, en máximo 2-3 párrafos concisos. Cuando uses herramientas, di exactamente qué estás haciendo. Sé proactivo: narra tu progreso.'
+    }];
+
+    if (history && Array.isArray(history)) {
+      for (const entry of history.slice(-10)) {
+        if (entry.sender === 'user') messages.push({ role: 'user', content: entry.text });
+        else if (entry.sender === 'nim') messages.push({ role: 'assistant', content: entry.text });
+      }
+    }
+    messages.push({ role: 'user', content: prompt });
+
     const hermesRes = await fetch('http://localhost:8642/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: loadModelPrefs().active,
-        messages: [{ role: 'user', content: prompt }]
+        messages
       })
     });
 
@@ -882,7 +896,7 @@ app.post('/api/agent', async (req, res) => {
 
 // Streaming endpoint — SSE en tiempo real para conversación natural con muletillas
 app.post('/api/agent/stream', async (req, res) => {
-  const { prompt } = req.body;
+  const { prompt, history } = req.body;
   if (!prompt) return res.status(400).json({ error: 'La instrucción es requerida.' });
 
   res.writeHead(200, {
@@ -895,12 +909,35 @@ app.post('/api/agent/stream', async (req, res) => {
   const send = (data: any) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
+    // Construir historial completo para mantener sesión persistente
+    const messages: any[] = [];
+    
+    // Inyectar system prompt para darle contexto
+    messages.push({
+      role: 'system',
+      content: `Eres NIM, un asistente agéntico elite. Responde en español, en máximo 2-3 párrafos concisos. Cuando uses herramientas, di exactamente qué estás haciendo ("Buscando en la web...", "Analizando resultados..."). Sé proactivo: narra tu progreso.`
+    });
+
+    // Incluir historial de conversación si existe
+    if (history && Array.isArray(history)) {
+      for (const entry of history.slice(-10)) { // últimos 10 mensajes para contexto
+        if (entry.sender === 'user') {
+          messages.push({ role: 'user', content: entry.text });
+        } else if (entry.sender === 'nim') {
+          messages.push({ role: 'assistant', content: entry.text });
+        }
+      }
+    }
+    
+    // Agregar el prompt actual
+    messages.push({ role: 'user', content: prompt });
+
     const hermesRes = await fetch('http://localhost:8642/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: loadModelPrefs().active,
-        messages: [{ role: 'user', content: prompt }],
+        messages,
         stream: true,
       }),
     });

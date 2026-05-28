@@ -608,7 +608,7 @@ export default function App() {
     setChatMessages(prev => [...prev, newMessage]);
   };
 
-  // Sound synthesis with reactive Energy Orb and custom muting integrations
+  // Sound synthesis — NUNCA cambia el estado/orbe. Eso lo controla submitPrompt.
   const speakText = (text: string) => {
     console.log('[TTS] speakText llamado con', text.length, 'caracteres');
     
@@ -633,22 +633,22 @@ export default function App() {
     const cleanTextForSpeech = (rawText: string) => {
       if (!rawText) return "";
       return rawText
-        .replace(/```[\s\S]*?```/g, "")        // Remove code blocks entirely
-        .replace(/\*\*([^*]+)\*\*/g, "$1")      // Remove bold formatting, speak the word
-        .replace(/\*([^*]+)\*/g, "$1")          // Remove italics formatting
-        .replace(/__([^_]+)__/g, "$1")          // Remove bold underscores
-        .replace(/_([^_]+)_/g, "$1")            // Remove italic underscores
-        .replace(/#+\s+/g, "")                  // Remove headers
-        .replace(/^\s*[-*+]\s+/gm, "")          // Remove list bullets
-        .replace(/^\s*\d+\.\s+/gm, "")          // Remove list numbers
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Remove markdown links, keep text
-        .replace(/https?:\/\/[^\s]+/g, "")      // Remove raw URLs
-        .replace(/---+/g, "")                   // Remove horizontal rules
-        .replace(/[`*_~]/g, "")                 // Remove backticks, stray asterisks, underscores, tildes
-        .replace(/[{}[\]]/g, "")                // Remove JSON braces and brackets
-        .replace(/\n{2,}/g, ". ")               // Collapse multiple newlines into pauses
-        .replace(/\n/g, " ")                    // Collapse single newlines
-        .replace(/\s{2,}/g, " ")                // Collapse whitespace
+        .replace(/```[\s\S]*?```/g, "")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\*([^*]+)\*/g, "$1")
+        .replace(/__([^_]+)__/g, "$1")
+        .replace(/_([^_]+)_/g, "$1")
+        .replace(/#+\s+/g, "")
+        .replace(/^\s*[-*+]\s+/gm, "")
+        .replace(/^\s*\d+\.\s+/gm, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/https?:\/\/[^\s]+/g, "")
+        .replace(/---+/g, "")
+        .replace(/[`*_~]/g, "")
+        .replace(/[{}[\]]/g, "")
+        .replace(/\n{2,}/g, ". ")
+        .replace(/\n/g, " ")
+        .replace(/\s{2,}/g, " ")
         .trim();
     };
 
@@ -658,11 +658,12 @@ export default function App() {
       return;
     }
 
-    window.speechSynthesis.cancel();
+    // NO cancelamos — dejamos que las frases se encolen naturalmente
+    // window.speechSynthesis.cancel();  ← ERA ESTO lo que mataba el TTS
+    
     const utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = 'es-ES';
     
-    // Cargar voces — pueden no estar disponibles sincrónicamente
     const voices = window.speechSynthesis.getVoices();
     const esVoice = voices.find(v => v.lang.startsWith('es-') && v.name.toLowerCase().includes('google')) || 
                     voices.find(v => v.lang.startsWith('es-')) || 
@@ -670,33 +671,20 @@ export default function App() {
     
     if (esVoice) {
       utterance.voice = esVoice;
-      console.log('[TTS] Voz seleccionada:', esVoice.name);
+      console.log('[TTS] Voz:', esVoice.name);
     } else {
-      console.log('[TTS] Sin voces cargadas, usando default del navegador');
+      console.log('[TTS] Sin voces cargadas, usando default');
     }
 
     utterance.rate = 1.05; 
-    utterance.pitch = 0.95; // Custom deep rich tone
+    utterance.pitch = 0.95;
 
-    utterance.onstart = () => {
-      console.log('[TTS] Reproduciendo...');
-      setStatus('SPEAKING');
-      setOrbState('speaking');
-    };
+    // IMPORTANTE: NO cambiar status ni orbState aquí.
+    // El streaming controla el estado visual.
+    utterance.onstart = () => console.log('[TTS] Reproduciendo...');
+    utterance.onend = () => console.log('[TTS] Finalizado');
+    utterance.onerror = (e) => console.log('[TTS] Error:', e.error);
 
-    utterance.onend = () => {
-      console.log('[TTS] Finalizado');
-      setStatus('STANDBY');
-      setOrbState('idle');
-    };
-
-    utterance.onerror = (e) => {
-      console.log('[TTS] Error:', e.error);
-      setStatus('STANDBY');
-      setOrbState('idle');
-    };
-
-    speechUtteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
   };
 
@@ -753,10 +741,14 @@ export default function App() {
     }]);
 
     try {
+      // Enviar historial completo para mantener sesión persistente
       const response = await fetch('/api/agent/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptToSend }),
+        body: JSON.stringify({ 
+          prompt: promptToSend,
+          history: chatMessages.slice(-20), // últimos 20 mensajes como contexto
+        }),
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -824,6 +816,13 @@ export default function App() {
               speakNewPhrases();
             } else if (event.type === 'thought') {
               addLog('thought', event.message);
+              // Feedback proactivo: orbe sigue pensando + TTS breve
+              setOrbState('thinking');
+              // Si el pensamiento es significativo (>20 chars), decirlo
+              if (event.message && event.message.length > 20 && !isMuted && !ttsMuted) {
+                const shortMsg = event.message.replace(/"/g, '').slice(0, 100);
+                speakText(shortMsg);
+              }
             } else if (event.type === 'start') {
               addLog('system', 'Iniciando procesamiento...');
             } else if (event.type === 'done') {
@@ -834,6 +833,13 @@ export default function App() {
               addLog('response', 'Tarea completada');
               // Forzar a hablar todo lo que falta
               speakNewPhrases(true);
+              // Transicionar estado: THINKING → breve SPEAKING → STANDBY
+              setOrbState('speaking');
+              setStatus('SPEAKING');
+              setTimeout(() => {
+                setStatus('STANDBY');
+                setOrbState('idle');
+              }, 2000);
               return;
             } else if (event.type === 'error') {
               addLog('system', 'ERROR: ' + event.message);
@@ -861,7 +867,7 @@ export default function App() {
         const fbRes = await fetch('/api/agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: promptToSend }),
+          body: JSON.stringify({ prompt: promptToSend, history: chatMessages.slice(-20) }),
         });
         if (fbRes.ok) {
           const data = await fbRes.json();
