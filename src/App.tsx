@@ -805,8 +805,7 @@ export default function App() {
           const remaining = text.slice(spokenUpTo).trim();
           if (remaining.length > 0) {
             spokenUpTo = text.length;
-            // Para el texto final usamos speakText (más robusto, con voice selection)
-            speakText(remaining);
+            speakPhrase(remaining);
           }
         }
       };
