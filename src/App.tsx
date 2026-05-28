@@ -788,9 +788,9 @@ export default function App() {
           window.speechSynthesis.speak(u);
         };
 
-        // Buscar el último corte natural de frase en el texto nuevo
+        // Buscar cortes naturales: puntuación fuerte, salto de línea, o dos puntos
         const newText = text.slice(spokenUpTo);
-        const breakMatch = newText.match(/[.!?](?:\s+|$)|,\s|\n\n/);
+        const breakMatch = newText.match(/[.!?](?:\s+|$)|[:,]\s|\n/);
         
         if (breakMatch && breakMatch.index !== undefined) {
           const endIdx = spokenUpTo + breakMatch.index + breakMatch[0].length;
@@ -805,7 +805,8 @@ export default function App() {
           const remaining = text.slice(spokenUpTo).trim();
           if (remaining.length > 0) {
             spokenUpTo = text.length;
-            speakPhrase(remaining);
+            // Para el texto final usamos speakText (más robusto, con voice selection)
+            speakText(remaining);
           }
         }
       };
@@ -850,10 +851,11 @@ export default function App() {
               // Transicionar estado: THINKING → breve SPEAKING → STANDBY
               setOrbState('speaking');
               setStatus('SPEAKING');
+              // Timeout generoso para textos largos
               setTimeout(() => {
                 setStatus('STANDBY');
                 setOrbState('idle');
-              }, 2000);
+              }, 8000);
               return;
             } else if (event.type === 'error') {
               addLog('system', 'ERROR: ' + event.message);
