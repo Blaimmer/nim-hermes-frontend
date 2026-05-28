@@ -658,8 +658,11 @@ export default function App() {
       return;
     }
 
-    // NO cancelamos — dejamos que las frases se encolen naturalmente
-    // window.speechSynthesis.cancel();  ← ERA ESTO lo que mataba el TTS
+    // Solo cancelar si NO hay nada reproduciéndose ya.
+    // Así no matamos frases que se están diciendo.
+    if (!window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
     
     const utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = 'es-ES';
@@ -671,9 +674,6 @@ export default function App() {
     
     if (esVoice) {
       utterance.voice = esVoice;
-      console.log('[TTS] Voz:', esVoice.name);
-    } else {
-      console.log('[TTS] Sin voces cargadas, usando default');
     }
 
     utterance.rate = 1.05; 
@@ -685,6 +685,7 @@ export default function App() {
     utterance.onend = () => console.log('[TTS] Finalizado');
     utterance.onerror = (e) => console.log('[TTS] Error:', e.error);
 
+    speechUtteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
   };
 

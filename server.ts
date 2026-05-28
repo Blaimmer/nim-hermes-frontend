@@ -954,7 +954,7 @@ app.post('/api/agent/stream', async (req, res) => {
 
     // Enviar evento de inicio para que el frontend sepa que empezamos
     send({ type: 'start' });
-    send({ type: 'thought', message: `Analizando: "${prompt.slice(0, 80)}${prompt.length > 80 ? '...' : ''}"` });
+    send({ type: 'thought', message: 'Analizando tu solicitud...' });
 
     while (true) {
       const { done, value } = await reader.read();
