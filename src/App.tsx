@@ -658,11 +658,8 @@ export default function App() {
       return;
     }
 
-    // Solo cancelar si NO hay nada reproduciéndose ya.
-    // Así no matamos frases que se están diciendo.
-    if (!window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel();
-    }
+    // Chrome requiere cancel() antes de speak() o ignora la llamada.
+    window.speechSynthesis.cancel();
     
     const utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = 'es-ES';
@@ -728,6 +725,9 @@ export default function App() {
     setStatus('THINKING');
     setOrbState('thinking');
     
+    // Cancelar cualquier speech residual antes de empezar
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    
     // ID para el mensaje en streaming que se actualiza en tiempo real
     const streamingMsgId = `chat-stream-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -762,10 +762,31 @@ export default function App() {
       let accumulatedContent = '';
       let spokenUpTo = 0; // índice hasta donde ya se habló
 
-      // Detecta frases completas (terminan en . ! ? , o salto de línea doble)
+      // Detecta frases completas y las habla sin cancelar entre sí
       const speakNewPhrases = (forceFinal = false) => {
         const text = accumulatedContent;
         if (text.length <= spokenUpTo) return;
+
+        // Función interna para hablar SIN cancelar (las frases se encolan)
+        const speakPhrase = (phraseText: string) => {
+          if (isMuted || ttsMuted || !('speechSynthesis' in window)) return;
+          const clean = phraseText
+            .replace(/```[\s\S]*?```/g, "")
+            .replace(/[*_~`#[\]{}]/g, "")
+            .replace(/https?:\/\/[^\s]+/g, "")
+            .replace(/\n/g, " ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+          if (!clean || clean.length < 3) return;
+          const u = new SpeechSynthesisUtterance(clean);
+          u.lang = 'es-ES';
+          u.rate = 1.05;
+          u.pitch = 0.95;
+          const voices = window.speechSynthesis.getVoices();
+          const esVoice = voices.find((v: any) => v.lang.startsWith('es-'));
+          if (esVoice) u.voice = esVoice;
+          window.speechSynthesis.speak(u);
+        };
 
         // Buscar el último corte natural de frase en el texto nuevo
         const newText = text.slice(spokenUpTo);
@@ -775,19 +796,16 @@ export default function App() {
           const endIdx = spokenUpTo + breakMatch.index + breakMatch[0].length;
           if (endIdx > spokenUpTo) {
             const phrase = text.slice(spokenUpTo, endIdx).trim();
-            if (phrase.length > 10) { // evitar frases muy cortas
+            if (phrase.length > 10) {
               spokenUpTo = endIdx;
-              lastSpokenRef.current = '';
-              speakText(phrase);
+              speakPhrase(phrase);
             }
           }
         } else if (forceFinal) {
-          // Al final, hablar lo que queda
           const remaining = text.slice(spokenUpTo).trim();
           if (remaining.length > 0) {
             spokenUpTo = text.length;
-            lastSpokenRef.current = '';
-            speakText(remaining);
+            speakPhrase(remaining);
           }
         }
       };
@@ -817,13 +835,8 @@ export default function App() {
               speakNewPhrases();
             } else if (event.type === 'thought') {
               addLog('thought', event.message);
-              // Feedback proactivo: orbe sigue pensando + TTS breve
+              // Mantener el orbe activo, pero NO hacer TTS (interfiere con la respuesta)
               setOrbState('thinking');
-              // Si el pensamiento es significativo (>20 chars), decirlo
-              if (event.message && event.message.length > 20 && !isMuted && !ttsMuted) {
-                const shortMsg = event.message.replace(/"/g, '').slice(0, 100);
-                speakText(shortMsg);
-              }
             } else if (event.type === 'start') {
               addLog('system', 'Iniciando procesamiento...');
             } else if (event.type === 'done') {
