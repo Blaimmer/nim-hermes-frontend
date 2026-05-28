@@ -377,6 +377,7 @@ export default function App() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const pendingUtterancesRef = useRef<number>(0);
 
   // Digital clock loop
   useEffect(() => {
@@ -780,6 +781,22 @@ export default function App() {
         const voices = window.speechSynthesis.getVoices();
         const esVoice = voices.find((v: any) => v.lang.startsWith('es-'));
         if (esVoice) u.voice = esVoice;
+        
+        pendingUtterancesRef.current++;
+        u.onstart = () => {
+          setStatus('SPEAKING');
+          setOrbState('speaking');
+        };
+        u.onend = () => {
+          pendingUtterancesRef.current--;
+          if (pendingUtterancesRef.current <= 0) {
+            pendingUtterancesRef.current = 0;
+            setStatus('STANDBY');
+            setOrbState('idle');
+          }
+        };
+        u.onerror = u.onend;
+        
         window.speechSynthesis.speak(u);
       };
 
@@ -858,14 +875,11 @@ export default function App() {
               addLog('response', 'Tarea completada');
               // Forzar a hablar todo lo que falta
               speakNewPhrases(true);
-              // Transicionar estado: THINKING → breve SPEAKING → STANDBY
-              setOrbState('speaking');
-              setStatus('SPEAKING');
-              // Timeout generoso para textos largos
-              setTimeout(() => {
+              // Si no hay frases pendientes por hablar, pasamos a standby inmediatamente
+              if (pendingUtterancesRef.current <= 0) {
                 setStatus('STANDBY');
                 setOrbState('idle');
-              }, 8000);
+              }
               return;
             } else if (event.type === 'error') {
               addLog('system', 'ERROR: ' + event.message);
@@ -883,6 +897,11 @@ export default function App() {
       ));
       if (accumulatedContent) {
         speakNewPhrases(true);
+      }
+      
+      if (pendingUtterancesRef.current <= 0) {
+        setStatus('STANDBY');
+        setOrbState('idle');
       }
     } catch (e: any) {
       console.error('Streaming falló, usando fallback no-streaming:', e.message);
