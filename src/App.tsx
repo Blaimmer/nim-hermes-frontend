@@ -159,6 +159,7 @@ export default function App() {
   const [ttsMuted, setTtsMuted] = useState(false);
   const [systemStatusMessage, setSystemStatusMessage] = useState('');
   const lastSpokenRef = useRef('');
+  const micErrorRef = useRef(false); // Track mic errors across async handlers
 
   // Telemetry Search simulation states
   const [telemetryQuery, setTelemetryQuery] = useState('especificacion mcp 2026');
@@ -548,15 +549,20 @@ export default function App() {
       }
       setStatus('STANDBY');
       setOrbState('idle');
+      addLog('system', 'Microfono desactivado.');
       return;
     }
+
+    // Feedback visual INMEDIATO — antes de pedir permiso al navegador
+    micErrorRef.current = false; // Resetear flag de error
+    setStatus('LISTENING');
+    setOrbState('listening');
+    addLog('system', 'Solicitando acceso al microfono...');
 
     // Siempre crear un recognition fresco antes de empezar
     const rec = createSpeechRecognition();
     if (!rec) {
       // Fallback simulado si no hay API
-      setStatus('LISTENING');
-      setOrbState('listening');
       addLog('system', 'Simulacion de canal de audio virtual activada. Escriba en la barra.');
       setTimeout(() => {
         setStatus(prev => prev === 'LISTENING' ? 'STANDBY' : prev);
@@ -567,9 +573,15 @@ export default function App() {
     recognitionRef.current = rec;
     try {
       rec.start();
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error iniciando reconocimiento:', e);
-      setStatus('STANDBY');
+      addLog('system', `Error de microfono: ${e.message || 'Permiso denegado'}. Verifique permisos del navegador.`);
+      setStatus('ERROR');
+      setOrbState('idle');
+      // Resetear despues de 3s para que el usuario pueda reintentar
+      setTimeout(() => {
+        setStatus(prev => prev === 'ERROR' ? 'STANDBY' : prev);
+      }, 3000);
     }
   };
 
@@ -606,9 +618,7 @@ export default function App() {
     }
     
     if (isMuted || ttsMuted) {
-      console.log('[TTS] Silenciado (mute/ttsMuted)');
-      setStatus('STANDBY');
-      setOrbState('idle');
+      console.log('[TTS] Silenciado (mute/ttsMuted) — NO cambio estado visual');
       return;
     }
     
@@ -642,10 +652,17 @@ export default function App() {
         .trim();
     };
 
+    const cleaned = cleanTextForSpeech(text);
+    if (!cleaned) {
+      console.log('[TTS] Texto limpio vacío, ignorando');
+      return;
+    }
+
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(cleanTextForSpeech(text));
+    const utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = 'es-ES';
     
+    // Cargar voces — pueden no estar disponibles sincrónicamente
     const voices = window.speechSynthesis.getVoices();
     const esVoice = voices.find(v => v.lang.startsWith('es-') && v.name.toLowerCase().includes('google')) || 
                     voices.find(v => v.lang.startsWith('es-')) || 
@@ -653,22 +670,28 @@ export default function App() {
     
     if (esVoice) {
       utterance.voice = esVoice;
+      console.log('[TTS] Voz seleccionada:', esVoice.name);
+    } else {
+      console.log('[TTS] Sin voces cargadas, usando default del navegador');
     }
 
     utterance.rate = 1.05; 
     utterance.pitch = 0.95; // Custom deep rich tone
 
     utterance.onstart = () => {
+      console.log('[TTS] Reproduciendo...');
       setStatus('SPEAKING');
       setOrbState('speaking');
     };
 
     utterance.onend = () => {
+      console.log('[TTS] Finalizado');
       setStatus('STANDBY');
       setOrbState('idle');
     };
 
-    utterance.onerror = () => {
+    utterance.onerror = (e) => {
+      console.log('[TTS] Error:', e.error);
       setStatus('STANDBY');
       setOrbState('idle');
     };
@@ -918,13 +941,28 @@ export default function App() {
     rec.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
       if (event.error !== 'no-speech') {
-        addLog('system', `Error en la senal del captador vocal: ${event.error}`);
+        micErrorRef.current = true; // Marcar error para que onend no lo sobrescriba
+        const errorMsg = event.error === 'not-allowed' 
+          ? 'Permiso de microfono DENEGADO. Conceda acceso al microfono en la configuracion del navegador.' 
+          : `Error en la senal del captador vocal: ${event.error}`;
+        addLog('system', errorMsg);
         setStatus('ERROR');
+        setOrbState('idle');
+        // Mantener ERROR visible 4s para que el usuario vea el feedback
+        setTimeout(() => {
+          micErrorRef.current = false;
+          setStatus(prev => prev === 'ERROR' ? 'STANDBY' : prev);
+        }, 4000);
       }
     };
 
     rec.onend = () => {
-      if (isWakeWordMode && status !== 'ERROR') {
+      console.log('[MIC] onend disparado, status:', status, 'wakeWord:', isWakeWordMode, 'errorFlag:', micErrorRef.current);
+      if (micErrorRef.current) {
+        // No sobrescribir el estado de error
+        return;
+      }
+      if (isWakeWordMode) {
         try { rec.start(); } catch (e) {
           // Si falla el reinicio en modo wake, recrear
           const newRec = createSpeechRecognition();
