@@ -172,6 +172,9 @@ class NimWSSServer:
         # Tool calls pendientes en tránsito
         self.pending_calls: dict[str, PendingToolCall] = {}
 
+        # Modelo activo (dinámico, cambiable vía switch_model)
+        self.active_model = self._load_active_model()
+
         # Estado del servidor
         self._server: websockets.WebSocketServer | None = None
         self._running = False
@@ -383,6 +386,18 @@ class NimWSSServer:
                 elif msg_type == "user_audio":
                     # 🔥 NUEVO: Audio del usuario → biometría → STT → LLM
                     await self._handle_user_audio(message, client, websocket)
+                elif msg_type == "get_models":
+                    # 🆕 UI: pedir lista de modelos
+                    await self._handle_get_models(websocket, client)
+                elif msg_type == "switch_model":
+                    # 🆕 UI: cambiar modelo activo
+                    await self._handle_switch_model(message, websocket, client)
+                elif msg_type == "get_soul":
+                    # 🆕 UI: cargar bloques soul (human/persona/task)
+                    await self._handle_get_soul(websocket, client)
+                elif msg_type == "update_soul":
+                    # 🆕 UI: guardar bloque soul
+                    await self._handle_update_soul(message, websocket, client)
                 elif msg_type == "ping":
                     # Responder pong
                     pong = self.e2ee.encrypt_payload(
@@ -825,7 +840,7 @@ class NimWSSServer:
                 resp = await http.post(
                     self.hermes_api_url,
                     json={
-                        "model": "deepseek-v4-pro",
+                        "model": self.active_model,
                         "messages": client.conversation,
                         "stream": False,
                     },
@@ -900,6 +915,192 @@ class NimWSSServer:
         except Exception as e:
             logger.error(f"Error en transcripción: {e}")
             return f"[Error de transcripción: {e}]"
+
+    # ─── UI Actions: Modelos + Soul (Fase 5: Enrutamiento UI ↔ WSS) ───
+
+    # Catálogo de modelos conocidos (sincronizado con el dashboard)
+    KNOWN_MODELS: list[dict[str, Any]] = [
+        {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "provider": "deepseek"},
+        {"id": "deepseek-v3", "name": "DeepSeek V3", "provider": "deepseek"},
+        {"id": "deepseek-r1", "name": "DeepSeek R1", "provider": "deepseek"},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "provider": "google"},
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "provider": "google"},
+        {"id": "claude-sonnet-4", "name": "Claude Sonnet 4", "provider": "anthropic"},
+        {"id": "claude-opus-4", "name": "Claude Opus 4", "provider": "anthropic"},
+        {"id": "gpt-4o", "name": "GPT-4o", "provider": "openai"},
+        {"id": "gpt-4.1", "name": "GPT-4.1", "provider": "openai"},
+        {"id": "grok-3", "name": "Grok 3", "provider": "xai"},
+        {"id": "mistral-large", "name": "Mistral Large", "provider": "mistral"},
+        {"id": "command-r-plus", "name": "Command R+", "provider": "cohere"},
+        {"id": "llama-4-maverick", "name": "Llama 4 Maverick", "provider": "meta"},
+    ]
+
+    MODEL_PREFS_PATH = Path("/home/clawd/nim-hermes-frontend/.hermes-model-prefs.json")
+    CUSTOM_MODELS_PATH = Path("/home/clawd/nim-hermes-frontend/.hermes-custom-models.json")
+    SOUL_DIR = Path("/home/clawd/nim-hermes-frontend")
+
+    SOUL_FILES = {
+        "human": "SOUL.md",
+        "persona": "AGENT.md",
+        "task": "AGENTS.md",
+    }
+
+    def _load_active_model(self) -> str:
+        """Carga el modelo activo desde el archivo de preferencias."""
+        try:
+            if self.MODEL_PREFS_PATH.exists():
+                prefs = json.loads(self.MODEL_PREFS_PATH.read_text())
+                return prefs.get("active", "deepseek-v4-pro")
+        except Exception:
+            pass
+        return "deepseek-v4-pro"
+
+    def _save_active_model(self, model_id: str) -> None:
+        """Guarda el modelo activo en el archivo de preferencias."""
+        try:
+            prefs = {}
+            if self.MODEL_PREFS_PATH.exists():
+                prefs = json.loads(self.MODEL_PREFS_PATH.read_text())
+            prefs["active"] = model_id
+            self.MODEL_PREFS_PATH.write_text(json.dumps(prefs, indent=2))
+            self.active_model = model_id
+            logger.info(f"MODELO CAMBIADO: {model_id}")
+        except Exception as e:
+            logger.error(f"Error guardando modelo activo: {e}")
+
+    def _build_models_list(self) -> list[dict]:
+        """Construye la lista completa de modelos con el activo marcado."""
+        models = []
+        seen_ids = {m["id"] for m in self.KNOWN_MODELS}
+
+        # Agregar modelos built-in
+        for m in self.KNOWN_MODELS:
+            models.append({**m, "active": m["id"] == self.active_model})
+
+        # Agregar modelos custom
+        try:
+            if self.CUSTOM_MODELS_PATH.exists():
+                customs = json.loads(self.CUSTOM_MODELS_PATH.read_text())
+                if isinstance(customs, list):
+                    for c in customs:
+                        cid = c.get("id", "")
+                        if cid and cid not in seen_ids:
+                            models.append({
+                                "id": cid,
+                                "name": c.get("name", cid),
+                                "provider": c.get("provider", "custom"),
+                                "active": cid == self.active_model,
+                            })
+                            seen_ids.add(cid)
+        except Exception:
+            pass
+
+        return models
+
+    async def _handle_get_models(
+        self, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Devuelve la lista de modelos disponibles."""
+        models = self._build_models_list()
+        response = {
+            "type": "models_list",
+            "models": models,
+        }
+        encrypted = self.e2ee.encrypt_payload(json.dumps(response))
+        await websocket.send(encrypted)
+        logger.info(f"MODELS_LIST → {client.device_name}: {len(models)} modelos, activo={self.active_model}")
+
+    async def _handle_switch_model(
+        self, message: dict, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Cambia el modelo activo y responde con lista actualizada."""
+        model_id = message.get("modelId", "")
+        if not model_id:
+            await self._send_bot_message(
+                websocket, client, "Error: modelId requerido", "idle"
+            )
+            return
+
+        # Verificar que el modelo existe
+        known_ids = {m["id"] for m in self._build_models_list()}
+        if model_id not in known_ids:
+            await self._send_bot_message(
+                websocket, client,
+                f"Modelo '{model_id}' no encontrado. Modelos disponibles: {', '.join(sorted(known_ids))}",
+                "idle",
+            )
+            return
+
+        # Guardar y aplicar
+        self._save_active_model(model_id)
+
+        # Limpiar historial de conversación (nuevo modelo = nueva conversación)
+        client.conversation = []
+
+        # Responder con lista actualizada
+        models = self._build_models_list()
+        response = {
+            "type": "models_list",
+            "models": models,
+        }
+        encrypted = self.e2ee.encrypt_payload(json.dumps(response))
+        await websocket.send(encrypted)
+        logger.info(f"MODEL SWITCH → {client.device_name}: {model_id}")
+
+    async def _handle_get_soul(
+        self, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Devuelve el contenido de los bloques soul (human/persona/task)."""
+        soul_data = {}
+        for block, filename in self.SOUL_FILES.items():
+            filepath = self.SOUL_DIR / filename
+            try:
+                if filepath.exists():
+                    soul_data[f"{block}Block"] = filepath.read_text(encoding="utf-8")
+                else:
+                    soul_data[f"{block}Block"] = ""
+            except Exception as e:
+                logger.error(f"Error leyendo {filename}: {e}")
+                soul_data[f"{block}Block"] = ""
+
+        response = {"type": "soul_data", **soul_data}
+        encrypted = self.e2ee.encrypt_payload(json.dumps(response))
+        await websocket.send(encrypted)
+        logger.info(f"SOUL_DATA → {client.device_name}: {len(soul_data)} bloques")
+
+    async def _handle_update_soul(
+        self, message: dict, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Guarda un bloque soul (human/persona/task) en el archivo correspondiente."""
+        block = message.get("block", "")
+        content = message.get("content", "")
+
+        if block not in self.SOUL_FILES:
+            await self._send_bot_message(
+                websocket, client,
+                f"Bloque '{block}' no válido. Usa: human, persona, task",
+                "idle",
+            )
+            return
+
+        filename = self.SOUL_FILES[block]
+        filepath = self.SOUL_DIR / filename
+
+        try:
+            filepath.write_text(content, encoding="utf-8")
+            logger.info(f"SOUL ACTUALIZADO: {filename} ({len(content)} chars)")
+            await self._send_bot_message(
+                websocket, client,
+                f"✅ Memoria '{block}' actualizada correctamente.",
+                "idle",
+            )
+        except Exception as e:
+            logger.error(f"Error guardando {filename}: {e}")
+            await self._send_bot_message(
+                websocket, client,
+                f"❌ Error al guardar: {e}",
+                "idle",
+            )
 
     # ─── Ciclo de Vida del Servidor ───
 
