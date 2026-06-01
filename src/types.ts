@@ -32,6 +32,7 @@ export interface Skill {
   isEnabled: boolean;
   description: string;
   callCount: number;
+  environment?: 'PC' | 'VPS';
 }
 
 export interface Stats {

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { wssClient } from './lib/wss_client';
 import { 
   Mic, 
   MicOff, 
@@ -191,45 +193,91 @@ export default function App() {
     }
   };
 
-  const fetchCoreStatus = async () => {
-    try {
-      const res = await fetch('/api/agent-core/status');
-      if (res.ok) {
-        const data = await res.json();
-        setCoreStatus(data);
-        if (data.workingMemory) {
-          setWmHuman(data.workingMemory.humanBlock);
-          setWmPersona(data.workingMemory.personaBlock);
-          setWmTask(data.workingMemory.taskBlock);
-        }
-        if (data.skills) {
-          setSkills(prev => {
-            const merged = [...prev];
-            data.skills.forEach((bs: any) => {
-              if (!merged.some(s => s.id === bs.id)) {
-                merged.push({
-                  id: bs.id,
-                  name: bs.name.toUpperCase(),
-                  status: 'Activa',
-                  isEnabled: true,
-                  description: bs.description,
-                  callCount: 0
-                });
-              }
-            });
-            return merged;
-          });
+  useEffect(() => {
+    (window as any).playCloudTTS = (textToSpeak: string) => {
+      // Revertido a síntesis local debido al bloqueo de WebView2 con APIs de nube sin key
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = 'es-ES';
+      // Intentar encontrar voces de Microsoft o Sabina
+      const voices = window.speechSynthesis.getVoices();
+      const esVoices = voices.filter(v => v.lang.startsWith('es'));
+      const bestVoice = esVoices.find(v => v.name.includes('Sabina') || v.name.includes('Microsoft') || v.name.includes('Natural')) || esVoices[0];
+      if (bestVoice) {
+        utterance.voice = bestVoice;
+      }
+      utterance.onend = () => {
+        // Nada, el estado idle lo maneja Hermes por WSS
+      };
+      utterance.onerror = (e) => {
+        console.error("Error en TTS Local:", e);
+      };
+      window.speechSynthesis.speak(utterance);
+    };
+
+    // WSS Connection
+    wssClient.connect("NimMasterKey2024!@#Secure").catch(err => {
+      console.error("Error conectando a Hermes:", err);
+    });
+
+    // WSS Event Hooks
+    wssClient.onLog = (type: string, message: string) => {
+      addLog(type as any, message);
+    };
+
+    wssClient.onBotMessage = (text: string, state: string) => {
+      setChatMessages(prev => [...prev, {
+        id: `msg-${Date.now()}`,
+        sender: 'nim',
+        text: text,
+        timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+        modelUsed: 'HERMES-VPS'
+      }]);
+      setOrbState(state as any);
+      
+      // Hablar la respuesta si no está silenciado (CLOUD TTS)
+      if (!ttsMuted) {
+        const clean = text.replace(/```[\s\S]*?```/g, "").replace(/[*_~`#[\]{}]/g, "").trim();
+        if (!clean) return;
+        
+        // Función global en la ventana o importada, pero por simplicidad la definimos aquí
+        if ((window as any).playCloudTTS) {
+          (window as any).playCloudTTS(clean);
+        } else {
+          // Si no está definida, fallback
+          const u = new SpeechSynthesisUtterance(clean);
+          u.lang = 'es-ES';
+          u.rate = 1.05;
+          u.pitch = 0.95;
+          window.speechSynthesis.speak(u);
         }
       }
-      // Async fetch second panel
-      await fetchOnboardingAndMCP();
-    } catch (err) {
-      console.error('Failed to load agent-core status:', err);
-    }
-  };
+    };
 
-  useEffect(() => {
-    fetchCoreStatus();
+    wssClient.onSkillsUpdate = (newSkills: any[]) => {
+      setSkills(prev => newSkills.map(s => {
+        const existing = prev.find(p => p.id === s.id);
+        return {
+          id: s.id,
+          name: s.name,
+          status: s.status || 'Activa',
+          description: s.description,
+          environment: s.environment,
+          isEnabled: existing ? existing.isEnabled : true,
+          callCount: existing ? existing.callCount : 0
+        };
+      }));
+    };
+    wssClient.onModelsList = (newModels: any[]) => {
+      setModelsList(newModels);
+      const active = newModels.find(m => m.active);
+      if (active) setActiveModelId(active.id);
+    };
+
+    wssClient.onSoulData = (soul: any) => {
+      setSoulHuman(soul.humanBlock || '');
+      setSoulPersona(soul.personaBlock || '');
+      setSoulTask(soul.taskBlock || '');
+    };
   }, []);
 
   // Cargar datos para MATRICE (Soul docs + MCP status)
@@ -430,8 +478,7 @@ export default function App() {
           networkStatus: res.ok ? 'NOMINAL' : 'DEGRADED'
         });
       } catch (err) {
-        console.warn('System telemetry fetch failed:', err);
-        setStats(prev => ({ ...prev, networkStatus: 'DISCONNECTED' }));
+        // Ignorar falla de telemetría del servidor viejo
       }
     };
 
@@ -454,22 +501,8 @@ export default function App() {
     const fetchModelsAndQuota = async () => {
       try {
         // Cargar modelos disponibles y quickModels
-        let modelsData: { models: HermesModel[]; active: string; quickModels: string[] } | null = null;
-        const modelsRes = await fetch('/api/hermes/models');
-        if (modelsRes.ok) {
-          const data = await modelsRes.json();
-          modelsData = data;
-          setModelsList(data.models || []);
-          if (data.quickModels && data.quickModels.length === 3) {
-            setQuickModels(data.quickModels);
-            setTempQuickSelection(data.quickModels);
-          }
-          if (data.active) {
-            setActiveModel(data.active);
-            const found = (data.models || []).find((m: HermesModel) => m.id === data.active);
-            if (found) setActiveModelName(found.name);
-          }
-        }
+        // Modelos se cargan vía WSS en onModelsList, solo solicitarlos
+        wssClient.getModels();
 
         // Cargar métricas reales de cuota
         const quotaRes = await fetch('/api/hermes/quota');
@@ -489,11 +522,7 @@ export default function App() {
               );
               if (altModel) {
                 try {
-                  await fetch('/api/hermes/switch-model', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ modelId: altModel.id }),
-                  });
+                  wssClient.switchModel(altModel.id);
                   setActiveModel(altModel.id);
                   setActiveModelName(altModel.name);
                   addLog('system', `DETECCIÓN COGNITIVA: Conmutando automáticamente a ${altModel.name} (Canal Activo).`);
@@ -609,28 +638,8 @@ export default function App() {
     setChatMessages(prev => [...prev, newMessage]);
   };
 
-  // Sound synthesis — NUNCA cambia el estado/orbe. Eso lo controla submitPrompt.
+  // Sound synthesis
   const speakText = (text: string) => {
-    console.log('[TTS] speakText llamado con', text.length, 'caracteres');
-    
-    if (!text || text.trim().length === 0) {
-      console.log('[TTS] Texto vacío, ignorando');
-      return;
-    }
-    
-    if (isMuted || ttsMuted) {
-      console.log('[TTS] Silenciado (mute/ttsMuted) — NO cambio estado visual');
-      return;
-    }
-    
-    if (!('speechSynthesis' in window)) {
-      console.log('[TTS] speechSynthesis no disponible');
-      return;
-    }
-
-    // Resetear el ref siempre para evitar bloqueos
-    if (lastSpokenRef) lastSpokenRef.current = '';
-
     const cleanTextForSpeech = (rawText: string) => {
       if (!rawText) return "";
       return rawText
@@ -659,32 +668,20 @@ export default function App() {
       return;
     }
 
-    // Chrome requiere cancel() antes de speak() o ignora la llamada.
-    window.speechSynthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(cleaned);
-    utterance.lang = 'es-ES';
-    
-    const voices = window.speechSynthesis.getVoices();
-    const esVoice = voices.find(v => v.lang.startsWith('es-') && v.name.toLowerCase().includes('google')) || 
-                    voices.find(v => v.lang.startsWith('es-')) || 
-                    voices[0];
-    
-    if (esVoice) {
-      utterance.voice = esVoice;
+    if ((window as any).playCloudTTS) {
+      (window as any).playCloudTTS(cleaned);
+    } else {
+      // Fallback
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(cleaned);
+      utterance.lang = 'es-ES';
+      utterance.rate = 1.05; 
+      utterance.pitch = 0.95;
+      const voices = window.speechSynthesis.getVoices();
+      const esVoice = voices.find(v => v.lang.startsWith('es-')) || voices[0];
+      if (esVoice) utterance.voice = esVoice;
+      window.speechSynthesis.speak(utterance);
     }
-
-    utterance.rate = 1.05; 
-    utterance.pitch = 0.95;
-
-    // IMPORTANTE: NO cambiar status ni orbState aquí.
-    // El streaming controla el estado visual.
-    utterance.onstart = () => console.log('[TTS] Reproduciendo...');
-    utterance.onend = () => console.log('[TTS] Finalizado');
-    utterance.onerror = (e) => console.log('[TTS] Error:', e.error);
-
-    speechUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
   };
 
   // Core model prompt dispatcher
@@ -716,6 +713,21 @@ export default function App() {
         addLog('system', statusMsg);
         addChatMessage('nim', statusMsg);
         return;
+      } else if (cmd === '/test-tauri') {
+        const runTest = async () => {
+          try {
+            const commandToRun = args.join(' ') || 'dir';
+            addLog('system', `Ejecutando comando Tauri local: ${commandToRun}`);
+            const result = await invoke<string>('nim_terminal', { command: commandToRun });
+            addLog('system', `Resultado Tauri:\n${result}`);
+            addChatMessage('nim', `Comando nativo ejecutado correctamente.\n\n\`\`\`json\n${result}\n\`\`\``);
+          } catch (e: any) {
+            addLog('system', `Error en comando Tauri local: ${e}`);
+            addChatMessage('nim', `Error al ejecutar comando nativo:\n\n\`\`\`json\n${e}\n\`\`\``);
+          }
+        };
+        runTest();
+        return;
       } else {
         addLog('system', `[COMANDO DESCONOCIDO] El comando ${cmd} no está registrado.`);
         addChatMessage('nim', `Lo siento Señor, no reconozco el comando "${cmd}". Pruebe con /clear, /stop o /status.`);
@@ -743,192 +755,18 @@ export default function App() {
     }]);
 
     try {
-      // Enviar historial completo para mantener sesión persistente
-      const response = await fetch('/api/agent/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt: promptToSend,
-          history: chatMessages.slice(-20), // últimos 20 mensajes como contexto
-        }),
-      });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No se pudo leer el stream');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let accumulatedContent = '';
-      let spokenUpTo = 0; // índice hasta donde ya se habló
-
-      // Función interna para hablar SIN cancelar (las frases se encolan)
-      const speakPhrase = (phraseText: string) => {
-        if (isMuted || ttsMuted || !('speechSynthesis' in window)) return;
-        const clean = phraseText
-          .replace(/```[\s\S]*?```/g, "")
-          .replace(/[*_~`#[\]{}]/g, "")
-          .replace(/https?:\/\/[^\s]+/g, "")
-          .replace(/\n/g, " ")
-          .replace(/\s{2,}/g, " ")
-          .trim();
-        if (!clean || clean.length < 3) return;
-        const u = new SpeechSynthesisUtterance(clean);
-        u.lang = 'es-ES';
-        u.rate = 1.05;
-        u.pitch = 0.95;
-        const voices = window.speechSynthesis.getVoices();
-        const esVoice = voices.find((v: any) => v.lang.startsWith('es-'));
-        if (esVoice) u.voice = esVoice;
-        
-        pendingUtterancesRef.current++;
-        u.onstart = () => {
-          setStatus('SPEAKING');
-          setOrbState('speaking');
-        };
-        u.onend = () => {
-          pendingUtterancesRef.current--;
-          if (pendingUtterancesRef.current <= 0) {
-            pendingUtterancesRef.current = 0;
-            setStatus('STANDBY');
-            setOrbState('idle');
-          }
-        };
-        u.onerror = u.onend;
-        
-        window.speechSynthesis.speak(u);
-      };
-
-      // Detecta frases completas y las habla sin cancelar entre sí
-      const speakNewPhrases = (forceFinal = false) => {
-        const text = accumulatedContent;
-        if (text.length <= spokenUpTo) return;
-
-        // Bucle para extraer y vocalizar TODAS las frases completas disponibles
-        while (true) {
-          const newText = text.slice(spokenUpTo);
-          if (!newText) break;
-
-          const breakMatch = newText.match(/[.!?](?:\s+|$)|[:,]\s|\n/);
-          
-          if (breakMatch && breakMatch.index !== undefined) {
-            const endIdx = spokenUpTo + breakMatch.index + breakMatch[0].length;
-            if (endIdx > spokenUpTo) {
-              const phrase = text.slice(spokenUpTo, endIdx).trim();
-              spokenUpTo = endIdx; // Siempre avanzar, sin importar la longitud
-              if (phrase.length > 0) {
-                speakPhrase(phrase);
-              }
-              continue;
-            } else {
-              break;
-            }
-          } else if (forceFinal) {
-            const remaining = text.slice(spokenUpTo).trim();
-            spokenUpTo = text.length; // Avanzar hasta el final
-            if (remaining.length > 0) {
-              speakPhrase(remaining);
-            }
-            break;
-          } else {
-            break; // No hay más cortes y no es el final, esperamos más chunks
-          }
-        }
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-
-          try {
-            const event = JSON.parse(trimmed.slice(6));
-
-            if (event.type === 'chunk') {
-              accumulatedContent += event.content;
-              // Actualizar el mensaje en tiempo real
-              setChatMessages(prev => prev.map(m =>
-                m.id === streamingMsgId ? { ...m, text: accumulatedContent } : m
-              ));
-              // Hablar frases completas que se hayan formado
-              speakNewPhrases();
-            } else if (event.type === 'thought') {
-              addLog('thought', event.message);
-              setOrbState('thinking');
-              // Vocalizar el pensamiento (ej. "Realizando tarea...") para no dejar en silencio
-              speakPhrase(event.message);
-            } else if (event.type === 'start') {
-              addLog('system', 'Iniciando procesamiento...');
-            } else if (event.type === 'done') {
-              accumulatedContent = event.response || accumulatedContent;
-              setChatMessages(prev => prev.map(m =>
-                m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
-              ));
-              addLog('response', 'Tarea completada');
-              // Forzar a hablar todo lo que falta
-              speakNewPhrases(true);
-              // Si no hay frases pendientes por hablar, pasamos a standby inmediatamente
-              if (pendingUtterancesRef.current <= 0) {
-                setStatus('STANDBY');
-                setOrbState('idle');
-              }
-              return;
-            } else if (event.type === 'error') {
-              addLog('system', 'ERROR: ' + event.message);
-              throw new Error(event.message);
-            }
-          } catch (parseErr: any) {
-            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
-          }
-        }
-      }
-
-      // Stream terminó sin 'done'
-      setChatMessages(prev => prev.map(m =>
-        m.id === streamingMsgId ? { ...m, text: accumulatedContent, streaming: false } : m
-      ));
-      if (accumulatedContent) {
-        speakNewPhrases(true);
-      }
+      // Enviar comando a Hermes vía el WebSocket Cifrado E2EE
+      await wssClient.sendUserMessage(promptToSend);
+      addLog('system', 'Comando enviado a Hermes VPS por túnel cifrado E2EE...');
       
-      if (pendingUtterancesRef.current <= 0) {
-        setStatus('STANDBY');
-        setOrbState('idle');
-      }
-    } catch (e: any) {
-      console.error('Streaming falló, usando fallback no-streaming:', e.message);
-      // Eliminar el placeholder de streaming
+      // Remover el placeholder, la respuesta real llegará por wssClient.onBotMessage
       setChatMessages(prev => prev.filter(m => m.id !== streamingMsgId));
-      // Fallback al endpoint no-streaming
-      try {
-        const fbRes = await fetch('/api/agent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: promptToSend, history: chatMessages.slice(-20) }),
-        });
-        if (fbRes.ok) {
-          const data = await fbRes.json();
-          if (data.response) {
-            addLog('response', `HERMES: "${data.response}"`);
-            addChatMessage('nim', data.response);
-            speakText(data.response);
-          }
-        }
-      } catch (fbErr: any) {
-        addLog('system', `Error en streaming y fallback: ${fbErr.message}`);
-        setStatus('ERROR');
-        const errMsg = 'Señor, hubo una interrupción en mis sistemas. ¿Podría intentarlo de nuevo?';
-        addChatMessage('nim', errMsg);
-        speakText(errMsg);
-      }
+
+    } catch (err: any) {
+      console.error('Error al enviar prompt:', err);
+      addLog('system', `[ERROR] No se pudo conectar con Hermes VPS: ${err.message}`);
+      setOrbState('idle');
+      setStatus('STANDBY');
     }
   };
 
@@ -1372,19 +1210,13 @@ export default function App() {
                     onClick={async () => {
                       addLog('system', `Solicitando conmutación a ${model.name}...`);
                       try {
-                        const res = await fetch('/api/hermes/switch-model', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ modelId: model.id }),
-                        });
-                        if (res.ok) {
-                          setActiveModel(model.id);
-                          setActiveModelName(model.name);
-                          addLog('system', `Matriz de NIM redirigida a ${model.name.toUpperCase()}.`);
-                          const confirmMsg = `¿Seguro que quiere cambiar a ${model.name}? El switch cognitivo está completo.`;
-                          addChatMessage('nim', confirmMsg);
-                          speakText(`Motor ${model.name} acoplado. Razonamiento activo.`);
-                        }
+                        wssClient.switchModel(model.id);
+                        setActiveModel(model.id);
+                        setActiveModelName(model.name);
+                        addLog('system', `Matriz de NIM redirigida a ${model.name.toUpperCase()}.`);
+                        const confirmMsg = `¿Seguro que quiere cambiar a ${model.name}? El switch cognitivo está completo.`;
+                        addChatMessage('nim', confirmMsg);
+                        speakText(`Motor ${model.name} acoplado. Razonamiento activo.`);
                       } catch (e: any) {
                         addLog('system', `Error al conmutar: ${e.message}`);
                       }
@@ -1859,11 +1691,7 @@ export default function App() {
                             setCustomModelApiKey('');
                             setCustomModelTestResult(null);
                             // Recargar lista de modelos
-                            const modelsRes = await fetch('/api/hermes/models');
-                            if (modelsRes.ok) {
-                              const mdata = await modelsRes.json();
-                              setModelsList(mdata.models || []);
-                            }
+                            wssClient.getModels();
                           } else {
                             addLog('system', `Error al agregar modelo: ${data.error || 'Desconocido'}`);
                           }
@@ -1904,16 +1732,10 @@ export default function App() {
                 disabled={tempQuickSelection.length !== 3}
                 onClick={async () => {
                   try {
-                    const res = await fetch('/api/hermes/config-quick-models', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ quickModels: tempQuickSelection }),
-                    });
-                    if (res.ok) {
-                      setQuickModels(tempQuickSelection);
-                      setShowModelSettings(false);
-                      addLog('system', 'Configuración de modelos rápidos actualizada.');
-                    }
+                    wssClient.configQuickModels(tempQuickSelection);
+                    setQuickModels(tempQuickSelection);
+                    setShowModelSettings(false);
+                    addLog('system', 'Configuración de modelos rápidos actualizada.');
                   } catch (e: any) {
                     addLog('system', `Error al guardar configuración: ${e.message}`);
                   }
@@ -2103,15 +1925,9 @@ export default function App() {
                       onClick={() => {
                         if (window.confirm('¿Confirmas cambiar cómo Hermes se refiere a ti?')) {
                           setSoulSaving('human');
-                          fetch('/api/hermes/soul-update', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ block: 'human', content: soulHuman })
-                          }).then(r => {
-                            if (!r.ok) throw new Error('Error al guardar');
-                          }).catch(err => {
-                            console.error(err);
-                          }).finally(() => setSoulSaving(null));
+                          wssClient.updateSoul('human', soulHuman);
+                          setSoulSaving(null);
+                          addLog('system', 'Matrice Soul: Human Block actualizado vía WSS.');
                         }
                       }}
                       disabled={soulSaving === 'human'}
@@ -2144,15 +1960,9 @@ export default function App() {
                       onClick={() => {
                         if (window.confirm('¿Confirmas cambiar la directriz de comportamiento del agente?')) {
                           setSoulSaving('persona');
-                          fetch('/api/hermes/soul-update', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ block: 'persona', content: soulPersona })
-                          }).then(r => {
-                            if (!r.ok) throw new Error('Error al guardar');
-                          }).catch(err => {
-                            console.error(err);
-                          }).finally(() => setSoulSaving(null));
+                          wssClient.updateSoul('persona', soulPersona);
+                          setSoulSaving(null);
+                          addLog('system', 'Matrice Soul: Persona Block actualizado vía WSS.');
                         }
                       }}
                       disabled={soulSaving === 'persona'}
@@ -2185,15 +1995,9 @@ export default function App() {
                       onClick={() => {
                         if (window.confirm('¿Confirmas cambiar la misión activa del agente?')) {
                           setSoulSaving('task');
-                          fetch('/api/hermes/soul-update', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ block: 'task', content: soulTask })
-                          }).then(r => {
-                            if (!r.ok) throw new Error('Error al guardar');
-                          }).catch(err => {
-                            console.error(err);
-                          }).finally(() => setSoulSaving(null));
+                          wssClient.updateSoul('task', soulTask);
+                          setSoulSaving(null);
+                          addLog('system', 'Matrice Soul: Task Block actualizado vía WSS.');
                         }
                       }}
                       disabled={soulSaving === 'task'}
@@ -2575,13 +2379,23 @@ export default function App() {
                       </div>
 
                       <div className="flex items-end justify-between w-full leading-none">
-                        <span className={`text-[7.5px] leading-none px-1 py-0.5 rounded ${
-                          !skill.isEnabled ? 'bg-neutral-950 text-neutral-500' :
-                          skill.status === 'Activa' ? 'bg-emerald-950/60 text-green-400 border border-emerald-900/60' :
-                          skill.status === 'Inactiva' ? 'bg-neutral-900 text-neutral-400' : 'bg-red-950/60 text-red-400'
-                        }`}>
-                          {skill.isEnabled ? skill.status.toUpperCase() : 'OFFLINE'}
-                        </span>
+                        <div className="flex gap-1 items-center">
+                          {skill.environment && (
+                            <span className={`text-[7px] leading-none px-1 py-0.5 rounded font-bold ${
+                              skill.environment === 'PC' ? 'bg-blue-900 text-blue-300 border border-blue-700/50' :
+                              'bg-purple-900 text-purple-300 border border-purple-700/50'
+                            }`}>
+                              {skill.environment}
+                            </span>
+                          )}
+                          <span className={`text-[7.5px] leading-none px-1 py-0.5 rounded ${
+                            !skill.isEnabled ? 'bg-neutral-950 text-neutral-500' :
+                            skill.status === 'Activa' ? 'bg-emerald-950/60 text-green-400 border border-emerald-900/60' :
+                            skill.status === 'Inactiva' ? 'bg-neutral-900 text-neutral-400' : 'bg-red-950/60 text-red-400'
+                          }`}>
+                            {skill.isEnabled ? skill.status.toUpperCase() : 'OFFLINE'}
+                          </span>
+                        </div>
                         <span className="text-[7px] text-cyan-500/50">{skill.callCount} Ticks</span>
                       </div>
                     </button>
@@ -3203,11 +3017,8 @@ export default function App() {
               <button onClick={() => {
                 if (window.confirm('¿Confirmas guardar los cambios?')) {
                   setSoulSaving(expandedBlock);
-                  fetch('/api/hermes/soul-update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ block: expandedBlock, content: expandedBlock === 'human' ? soulHuman : expandedBlock === 'persona' ? soulPersona : soulTask })
-                  }).catch(console.error).finally(() => setSoulSaving(null));
+                  wssClient.updateSoul(expandedBlock as any, expandedBlock === 'human' ? soulHuman : expandedBlock === 'persona' ? soulPersona : soulTask);
+                  setSoulSaving(null);
                   setExpandedBlock(null);
                 }
               }} className="px-4 py-2 text-xs bg-cyan-500/20 border border-cyan-400 text-cyan-200 rounded hover:bg-cyan-500/30 font-mono uppercase font-bold">
