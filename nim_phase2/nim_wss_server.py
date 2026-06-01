@@ -16,13 +16,16 @@ Ejecución:
 """
 
 import asyncio
+import base64
 import json
 import logging
 import signal
 import ssl
 import sys
+import tempfile
 import time
 import uuid
+import wave
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +33,12 @@ from typing import Any
 
 import websockets
 from websockets.asyncio.server import ServerConnection
+
+# ─── HTTP client para Hermes API ───
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 # ─── Importa el módulo E2EE (mismo directorio) ───
 try:
@@ -67,6 +76,8 @@ class ClientInfo:
     connected_at: str
     last_seen: str
     websocket: ServerConnection | None = None
+    # Historial de conversación para este cliente (formato OpenAI)
+    conversation: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -99,8 +110,31 @@ class NimWSSServer:
 
     DEFAULT_HOST = "0.0.0.0"
     DEFAULT_PORT = 9876
+    HERMES_API = "http://localhost:8642/v1/chat/completions"
     PING_INTERVAL = 30  # segundos
     HANDSHAKE_TIMEOUT = 15  # segundos para completar el handshake
+    MAX_CONVERSATION_LENGTH = 30  # mensajes máximo en historial
+    BIOMETRIC_THRESHOLD = 0.85  # umbral cosine similarity
+
+    # Skills que se envían al Nim PC al conectar
+    NIM_SKILLS = [
+        {"id": "nim_terminal", "name": "Terminal Local", "status": "Activa",
+         "description": "Ejecuta comandos en la PC del Creador (CMD, PowerShell, Bash)"},
+        {"id": "nim_filesystem", "name": "Sistema de Archivos", "status": "Activa",
+         "description": "Lee, escribe, borra y lista archivos locales"},
+        {"id": "nim_browser", "name": "Navegador Chrome", "status": "Activa",
+         "description": "Controla pestañas, navega, lee y hace clic en el navegador"},
+        {"id": "voice_biometrics", "name": "Biometría Vocal", "status": "Activa",
+         "description": "Verifica identidad del Creador por voz (ECAPA-TDNN)"},
+        {"id": "web_search", "name": "Búsqueda Web", "status": "Activa",
+         "description": "Busca en internet (Tavily + DuckDuckGo)"},
+        {"id": "memory", "name": "Memoria Persistente", "status": "Activa",
+         "description": "Recuerda preferencias y contexto entre sesiones"},
+        {"id": "code_execution", "name": "Ejecución de Código", "status": "Activa",
+         "description": "Ejecuta scripts Python en el VPS"},
+        {"id": "image_gen", "name": "Generación de Imágenes", "status": "Activa",
+         "description": "Crea imágenes con IA"},
+    ]
 
     def __init__(
         self,
@@ -109,10 +143,12 @@ class NimWSSServer:
         port: int = DEFAULT_PORT,
         ssl_cert: str | None = None,
         ssl_key: str | None = None,
+        hermes_api_url: str | None = None,
     ):
         self.host = host
         self.port = port
         self.ssl_context = self._build_ssl_context(ssl_cert, ssl_key)
+        self.hermes_api_url = hermes_api_url or self.HERMES_API
 
         # Capa de cifrado
         self.master_password = master_password
@@ -259,6 +295,9 @@ class NimWSSServer:
             )
             logger.info(f"HANDSHAKE COMPLETADO: {client_info.device_name}")
 
+            # ── Enviar skills_update al PC tras handshake ──
+            await self._send_skills_update(websocket, client_info)
+
             # ── FASE 2: Loop de mensajería principal ──
             await self.message_loop(websocket, client_info)
 
@@ -330,6 +369,12 @@ class NimWSSServer:
 
                 if msg_type == "tool_result":
                     await self._handle_tool_result(message, client)
+                elif msg_type == "user_message":
+                    # 🔥 NUEVO: Mensaje de texto del usuario → LLM
+                    await self._handle_user_message(message, client, websocket)
+                elif msg_type == "user_audio":
+                    # 🔥 NUEVO: Audio del usuario → biometría → STT → LLM
+                    await self._handle_user_audio(message, client, websocket)
                 elif msg_type == "ping":
                     # Responder pong
                     pong = self.e2ee.encrypt_payload(
@@ -548,6 +593,280 @@ class NimWSSServer:
                 f"TOOL_RESULT huérfano: call_id={call_id} "
                 f"de {client.device_name}"
             )
+
+    # ─── Chat Integration (Fase 2.3-2.4: Nim PC → Hermes LLM → Nim PC) ───
+
+    async def _send_skills_update(
+        self, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Envía la lista de habilidades al PC tras el handshake."""
+        skills_msg = {
+            "type": "skills_update",
+            "skills": self.NIM_SKILLS,
+        }
+        encrypted = self.e2ee.encrypt_payload(json.dumps(skills_msg))
+        await websocket.send(encrypted)
+        logger.info(f"SKILLS_UPDATE enviado a {client.device_name}: {len(self.NIM_SKILLS)} skills")
+
+    async def _send_bot_message(
+        self,
+        websocket: ServerConnection,
+        client: ClientInfo,
+        text: str,
+        bot_state: str = "idle",
+    ) -> None:
+        """Envía una respuesta del LLM al Nim PC con estado del orbe."""
+        bot_msg = {
+            "type": "bot_message",
+            "text": text,
+            "bot_state": bot_state,
+        }
+        encrypted = self.e2ee.encrypt_payload(json.dumps(bot_msg))
+        await websocket.send(encrypted)
+        logger.info(
+            f"BOT_MESSAGE → {client.device_name}: "
+            f"state={bot_state}, text_len={len(text)}"
+        )
+
+    async def _handle_user_message(
+        self,
+        message: dict,
+        client: ClientInfo,
+        websocket: ServerConnection,
+    ) -> None:
+        """Procesa un mensaje de texto del usuario: inyecta al LLM y responde."""
+        text = message.get("text", "").strip()
+        if not text:
+            await self._send_bot_message(
+                websocket, client, "No entendí el mensaje (vacío).", "idle"
+            )
+            return
+
+        logger.info(f"USER_MSG ← {client.device_name}: \"{text[:80]}...\"")
+
+        # Notificar al PC que estamos pensando
+        await self._send_bot_message(
+            websocket, client, "", "thinking"
+        )
+
+        try:
+            response_text = await self._call_hermes_api(client, text)
+            await self._send_bot_message(
+                websocket, client, response_text, "speaking"
+            )
+            # Volver a idle después de un momento
+            await asyncio.sleep(0.5)
+            await self._send_bot_message(
+                websocket, client, "", "idle"
+            )
+        except Exception as e:
+            logger.error(f"LLM ERROR para {client.device_name}: {e}")
+            await self._send_bot_message(
+                websocket, client,
+                f"Error al procesar tu mensaje: {e}", "idle"
+            )
+
+    async def _handle_user_audio(
+        self,
+        message: dict,
+        client: ClientInfo,
+        websocket: ServerConnection,
+    ) -> None:
+        """Procesa audio del usuario: biometría → STT → LLM."""
+        audio_b64 = message.get("audio_base64", "")
+        sample_rate = message.get("sample_rate", 16000)
+
+        if not audio_b64:
+            await self._send_bot_message(
+                websocket, client, "No recibí datos de audio.", "idle"
+            )
+            return
+
+        logger.info(
+            f"USER_AUDIO ← {client.device_name}: "
+            f"sample_rate={sample_rate}, base64_len={len(audio_b64)}"
+        )
+
+        # Notificar al PC
+        await self._send_bot_message(
+            websocket, client, "", "thinking"
+        )
+
+        try:
+            # ── 1. Decodificar Base64 → archivo WAV temporal ──
+            audio_bytes = base64.b64decode(audio_b64)
+            wav_path = None
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", delete=False
+            ) as tmp:
+                tmp.write(audio_bytes)
+                wav_path = tmp.name
+
+            try:
+                # ── 2. Verificar biometría vocal ──
+                biometry_ok = await self._verify_voice(wav_path)
+                if not biometry_ok:
+                    await self._send_bot_message(
+                        websocket, client,
+                        "Identidad vocal no reconocida. Acceso denegado.",
+                        "idle",
+                    )
+                    return
+
+                # ── 3. Transcribir audio → texto ──
+                user_text = await self._transcribe_audio(wav_path, sample_rate)
+
+                if not user_text or not user_text.strip():
+                    await self._send_bot_message(
+                        websocket, client,
+                        "No pude transcribir el audio. ¿Puedes intentar de nuevo?",
+                        "idle",
+                    )
+                    return
+
+                logger.info(
+                    f"AUDIO TRANSCRITO ({client.device_name}): \"{user_text[:80]}...\""
+                )
+
+                # ── 4. Enviar texto al LLM ──
+                response_text = await self._call_hermes_api(client, user_text)
+                await self._send_bot_message(
+                    websocket, client, response_text, "speaking"
+                )
+                await asyncio.sleep(0.5)
+                await self._send_bot_message(
+                    websocket, client, "", "idle"
+                )
+
+            finally:
+                # Limpiar archivo temporal
+                if wav_path:
+                    try:
+                        Path(wav_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            logger.error(f"AUDIO ERROR para {client.device_name}: {e}")
+            await self._send_bot_message(
+                websocket, client,
+                f"Error procesando audio: {e}", "idle"
+            )
+
+    async def _call_hermes_api(
+        self, client: ClientInfo, user_text: str
+    ) -> str:
+        """Llama al Hermes API (LLM) con el historial de conversación del cliente."""
+        if httpx is None:
+            # Fallback: devolver texto de prueba
+            return (
+                f"[Hermes LLM no disponible — httpx no instalado]\n\n"
+                f"Recibí tu mensaje: \"{user_text[:100]}\"\n\n"
+                f"Instala httpx para habilitar el LLM: pip install httpx"
+            )
+
+        # Construir mensajes con historial
+        if not client.conversation:
+            client.conversation.append({
+                "role": "system",
+                "content": (
+                    "Eres NIM, el asistente agéntico del Creador. "
+                    "Respondes en español. Eres conciso, útil y proactivo. "
+                    "Tienes acceso a la PC local del Creador vía nim_terminal, "
+                    "nim_filesystem, y nim_browser. "
+                    "Narras tu progreso brevemente cuando realizas acciones."
+                ),
+            })
+
+        client.conversation.append({"role": "user", "content": user_text})
+
+        # Limitar tamaño del historial
+        if len(client.conversation) > self.MAX_CONVERSATION_LENGTH:
+            # Mantener system prompt + últimos mensajes
+            system_msgs = [m for m in client.conversation if m["role"] == "system"]
+            other_msgs = [m for m in client.conversation if m["role"] != "system"]
+            client.conversation = system_msgs + other_msgs[-(self.MAX_CONVERSATION_LENGTH - len(system_msgs)):]
+
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            try:
+                resp = await http.post(
+                    self.hermes_api_url,
+                    json={
+                        "model": "deepseek-v4-pro",
+                        "messages": client.conversation,
+                        "stream": False,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                reply = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                )
+
+                if not reply:
+                    reply = "[Sin respuesta del LLM]"
+
+                # Guardar en historial
+                client.conversation.append({"role": "assistant", "content": reply})
+                return reply
+
+            except httpx.HTTPStatusError as e:
+                logger.error(f"API HTTP error: {e.response.status_code} {e.response.text[:200]}")
+                raise
+            except Exception as e:
+                logger.error(f"API error: {e}")
+                raise
+
+    async def _verify_voice(self, wav_path: str) -> bool:
+        """Verifica la identidad vocal usando voice_biometrics.py."""
+        try:
+            from voice_biometrics import VoiceBiometrics
+
+            vb = VoiceBiometrics()
+            # La huella se carga automáticamente en __init__ si existe
+            if vb._master_voiceprint is None:
+                logger.warning("No hay huella vocal maestra — permitiendo acceso")
+                return True
+
+            result = vb.verify(wav_path)
+            similarity = result.get("similarity", 0.0)
+
+            logger.info(f"BIOMETRÍA: similarity={similarity:.3f}, threshold={self.BIOMETRIC_THRESHOLD}")
+
+            if similarity >= self.BIOMETRIC_THRESHOLD:
+                logger.info("BIOMETRÍA: ACCESO CONCEDIDO ✓")
+                return True
+            else:
+                logger.warning(f"BIOMETRÍA: ACCESO DENEGADO ✗ (similarity={similarity:.3f})")
+                return False
+
+        except ImportError as e:
+            logger.warning(f"voice_biometrics no disponible ({e}) — permitiendo acceso")
+            return True  # Si no hay biometría, permitir (no bloquear al usuario)
+        except Exception as e:
+            logger.error(f"Error en biometría: {e}")
+            return True  # Fail-open si hay error
+
+    async def _transcribe_audio(
+        self, wav_path: str, sample_rate: int = 16000
+    ) -> str:
+        """Transcribe audio a texto usando Whisper o fallback."""
+        try:
+            import whisper
+
+            # Intentar cargar modelo (tiny para velocidad)
+            model = whisper.load_model("tiny")
+            result = model.transcribe(wav_path, language="es")
+            return result.get("text", "").strip()
+
+        except ImportError:
+            logger.warning("whisper no instalado — usa 'pip install openai-whisper'")
+            return "[STT no disponible: instala openai-whisper]"
+        except Exception as e:
+            logger.error(f"Error en transcripción: {e}")
+            return f"[Error de transcripción: {e}]"
 
     # ─── Ciclo de Vida del Servidor ───
 

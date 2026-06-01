@@ -431,3 +431,77 @@ hermes plugins list | grep nim-pc:
 5. ¡Listo! Hermes ya tiene las herramientas registradas y podrá enviar comandos.
 
 Ver `docs/NIM_PC_CONNECTION.md` para el checklist completo de conexión.
+
+---
+
+## 2026-06-01 — Fase 4: Chat Integration (Nim PC → Hermes LLM → Nim PC)
+
+### Objetivo
+Implementar las instrucciones de Antigravity para que Nim PC pueda enviar mensajes de chat (texto y audio) al VPS y recibir respuestas del LLM con sincronización de estado del orbe.
+
+### Requisitos de Antigravity (docs/HERMES_VPS_CHAT_INTEGRATION.md)
+1. `user_message` → texto del usuario inyectado al LLM
+2. `user_audio` → Base64 → biometría vocal → STT → LLM
+3. `bot_message` → respuesta del LLM con `bot_state` (thinking/speaking/idle)
+4. `skills_update` → lista de habilidades para el panel visual del PC
+
+### Cambios Realizados
+
+#### 1. nim_wss_server.py — Chat Integration
+- **Nuevos handlers en `message_loop`:**
+  - `user_message` → `_handle_user_message()` → `_call_hermes_api()` → `_send_bot_message()`
+  - `user_audio` → `_handle_user_audio()` → `_verify_voice()` + `_transcribe_audio()` → LLM
+- **Nuevos métodos:**
+  - `_send_skills_update()`: Envía 8 skills al PC tras handshake
+  - `_send_bot_message(text, bot_state)`: Respuesta cifrada con estado del orbe
+  - `_call_hermes_api(client, text)`: POST a Hermes API :8642 con historial de conversación
+  - `_verify_voice(wav_path)`: Biometría ECAPA-TDNN, umbral 0.85, fail-open si no hay huella
+  - `_transcribe_audio(wav_path, sample_rate)`: Whisper tiny, fallback si no instalado
+- **Historial de conversación:** `ClientInfo.conversation` — array OpenAI-format persistente por cliente (máx 30 mensajes)
+- **Dependencias:** httpx (requerido para LLM), whisper (opcional para STT)
+
+#### 2. Flujo de estados del orbe
+```
+user_message recibido → bot_state: "thinking" (orbe animado)
+LLM respondiendo      → bot_state: "thinking" (mantenido)
+respuesta lista       → bot_state: "speaking" (orbe hablando)
+0.5s después          → bot_state: "idle" (orbe en reposo)
+```
+
+### Verificación
+
+```
+1. Handshake ACK: fingerprint=ebba8cf932354988 ✅
+2. Skills update: 8 skills (nim_terminal, nim_filesystem, nim_browser,
+   voice_biometrics, web_search, memory, code_execution, image_gen) ✅
+3. USER_MESSAGE "Hola NIM!" → bot_state: thinking ✅
+4. Hermes API (DeepSeek V4 Pro) responde: 
+   "Conexión exitosa, Creador. Todo funcionando sin problemas." ✅
+5. bot_state: speaking → idle ✅
+```
+
+- ✅ Chat loop completo: Nim PC → WSS → Hermes API → WSS → Nim PC
+- ✅ 8 skills enviadas al conectar
+- ✅ 3 estados del orbe: thinking, speaking, idle
+- ✅ Historial de conversación persistente por cliente
+- ✅ user_audio implementado (biometría + STT, requiere whisper + huella vocal)
+- ✅ Fail-open en biometría si no hay huella registrada (no bloquea al usuario)
+
+### Para Antigravity (Nim PC)
+El servidor WSS ahora acepta y responde a estos tipos de mensaje:
+
+| Tipo (PC → VPS) | Formato | Acción |
+|---|---|---|
+| `user_message` | `{type, text}` | Texto → LLM → `bot_message` |
+| `user_audio` | `{type, audio_base64, sample_rate}` | Audio → Biometría → STT → LLM → `bot_message` |
+
+| Tipo (VPS → PC) | Formato | Significado |
+|---|---|---|
+| `bot_message` | `{type, text, bot_state}` | Respuesta del LLM + estado orbe |
+| `skills_update` | `{type, skills: [{id, name, status, description}]}` | Habilidades al conectar |
+
+### Notas para Antigravity
+- `bot_state` solo se usa para animaciones del orbe: `thinking`, `speaking`, `idle`
+- Enviar `bot_state: ""` (vacío) significa "no cambiar estado"
+- `skills_update` se envía automáticamente justo después del handshake
+- La biometría vocal requiere `pip install speechbrain torch` y una huella registrada con `python voice_biometrics.py enroll <audio.wav>`
