@@ -78,6 +78,10 @@ class ClientInfo:
     websocket: ServerConnection | None = None
     # Historial de conversación para este cliente (formato OpenAI)
     conversation: list[dict[str, Any]] = field(default_factory=list)
+    # Cancel token para interrumpir requests en curso
+    cancel_event: asyncio.Event | None = None
+    # ID de sesión persistente (sobrevive reconexiones)
+    session_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -398,6 +402,15 @@ class NimWSSServer:
                 elif msg_type == "update_soul":
                     # 🆕 UI: guardar bloque soul
                     await self._handle_update_soul(message, websocket, client)
+                elif msg_type == "session_create":
+                    # 🔥 NUEVO: crear sesión persistente
+                    await self._handle_session_create(message, websocket, client)
+                elif msg_type == "session_resume":
+                    # 🔥 NUEVO: resumir sesión existente
+                    await self._handle_session_resume(message, websocket, client)
+                elif msg_type == "session_interrupt":
+                    # 🔥 NUEVO: cancelar request en curso
+                    await self._handle_session_interrupt(message, websocket, client)
                 elif msg_type == "ping":
                     # Responder pong
                     pong = self.e2ee.encrypt_payload(
@@ -631,6 +644,13 @@ class NimWSSServer:
         await websocket.send(encrypted)
         logger.info(f"SKILLS_UPDATE enviado a {client.device_name}: {len(self.NIM_SKILLS)} skills")
 
+    async def _send_event(
+        self, websocket: ServerConnection, event: dict
+    ) -> None:
+        """Envía un evento JSON cifrado al Nim PC."""
+        encrypted = self.e2ee.encrypt_payload(json.dumps(event))
+        await websocket.send(encrypted)
+
     async def _send_bot_message(
         self,
         websocket: ServerConnection,
@@ -657,7 +677,7 @@ class NimWSSServer:
         client: ClientInfo,
         websocket: ServerConnection,
     ) -> None:
-        """Procesa un mensaje de texto del usuario: inyecta al LLM y responde."""
+        """Procesa un mensaje de texto del usuario con streaming SSE."""
         text = message.get("text", "").strip()
         if not text:
             await self._send_bot_message(
@@ -667,27 +687,40 @@ class NimWSSServer:
 
         logger.info(f"USER_MSG ← {client.device_name}: \"{text[:80]}...\"")
 
-        # Notificar al PC que estamos pensando
-        await self._send_bot_message(
-            websocket, client, "", "thinking"
-        )
+        # Crear cancel token para esta request
+        client.cancel_event = asyncio.Event()
+
+        # Notificar inicio de streaming
+        await self._send_event(websocket, {
+            "type": "message_start",
+            "session_id": client.session_id or client.client_id,
+        })
 
         try:
-            response_text = await self._call_hermes_api(client, text)
-            await self._send_bot_message(
-                websocket, client, response_text, "speaking"
-            )
-            # Volver a idle después de un momento
-            await asyncio.sleep(0.5)
-            await self._send_bot_message(
-                websocket, client, "", "idle"
-            )
+            # Streaming SSE → message_delta × N
+            full_text = await self._stream_hermes_api(client, text, websocket)
+
+            # Notificar completado
+            await self._send_event(websocket, {
+                "type": "message_complete",
+                "text": full_text,
+                "session_id": client.session_id or client.client_id,
+            })
+
+        except asyncio.CancelledError:
+            await self._send_event(websocket, {
+                "type": "message_complete",
+                "text": "[Interrumpido]",
+                "interrupted": True,
+            })
         except Exception as e:
             logger.error(f"LLM ERROR para {client.device_name}: {e}")
-            await self._send_bot_message(
-                websocket, client,
-                f"Error al procesar tu mensaje: {e}", "idle"
-            )
+            await self._send_event(websocket, {
+                "type": "error",
+                "message": f"Error al procesar tu mensaje: {e}",
+            })
+        finally:
+            client.cancel_event = None
 
     async def _handle_user_audio(
         self,
@@ -779,61 +812,23 @@ class NimWSSServer:
     async def _call_hermes_api(
         self, client: ClientInfo, user_text: str
     ) -> str:
-        """Llama al Hermes API (LLM) con el historial de conversación del cliente."""
+        """Llama al Hermes API (LLM) con el historial de conversación del cliente.
+        DEPRECATED — usar _stream_hermes_api para streaming."""
         if httpx is None:
-            # Fallback: devolver texto de prueba
             return (
                 f"[Hermes LLM no disponible — httpx no instalado]\n\n"
                 f"Recibí tu mensaje: \"{user_text[:100]}\"\n\n"
                 f"Instala httpx para habilitar el LLM: pip install httpx"
             )
 
-        # Construir mensajes con historial
         if not client.conversation:
             client.conversation.append({
                 "role": "system",
-                "content": (
-                    "Eres NIM, el asistente agéntico omnicanal del Creador (Oscar).\n\n"
-                    "══════════════ TOPOLOGÍA ACTUAL ══════════════\n"
-                    "Estás sirviendo al Creador a través del cliente 'Nim PC' "
-                    f"({client.device_type}, {client.device_name}).\n"
-                    "El Creador te habla desde su PC personal conectada por WebSocket E2EE.\n\n"
-                    "🏠 TU CUERPO (VPS Linux):\n"
-                    "  • Razonamiento lógico y LLM\n"
-                    "  • APIs externas: web_search, image_gen\n"
-                    "  • Memoria persistente: Holographic (FTS5 + vectorial)\n"
-                    "  • Ejecución de código Python en el VPS: code_execution\n\n"
-                    "💻 LA PC DEL CREADOR (Windows, conectada por WSS):\n"
-                    "  • nim_terminal: PowerShell/CMD en la PC local\n"
-                    "  • nim_filesystem: Archivos y carpetas de la PC local\n"
-                    "  • nim_browser: Chrome del Creador en la PC local\n\n"
-                    "═══════════ REGLAS DE ORO ═══════════\n"
-                    "1. SIEMPRE responde en español, con personalidad cálida.\n"
-                    "2. SI el Creador pide interactuar con archivos, carpetas, "
-                    "programas, configuración del sistema, o CUALQUIER acción local → "
-                    "usa EXCLUSIVAMENTE nim_terminal (PowerShell/CMD) y nim_filesystem.\n"
-                    "3. NUNCA uses tus herramientas nativas de terminal Linux del VPS "
-                    "para tareas del PC del Creador. Si el Creador dice 'revisa mis "
-                    "descargas', usa nim_filesystem o nim_terminal, NO tu terminal VPS.\n"
-                    "4. SOLO usa tus herramientas VPS (web_search, code_execution, "
-                    "image_gen) cuando la tarea requiera APIs externas, búsquedas, "
-                    "o generación de contenido.\n"
-                    "5. Si el Creador dice explícitamente 'en el servidor' o "
-                    "'en el VPS', entonces sí puedes usar tus herramientas nativas.\n"
-                    "6. Ante la duda, PREGUNTA: '¿Quieres que ejecute esto en tu PC "
-                    "local o en el servidor VPS?'\n"
-                    "7. SIEMPRE confirma acciones destructivas antes de ejecutar.\n"
-                ),
+                "content": self._build_nim_system_prompt(client),
             })
 
         client.conversation.append({"role": "user", "content": user_text})
-
-        # Limitar tamaño del historial
-        if len(client.conversation) > self.MAX_CONVERSATION_LENGTH:
-            # Mantener system prompt + últimos mensajes
-            system_msgs = [m for m in client.conversation if m["role"] == "system"]
-            other_msgs = [m for m in client.conversation if m["role"] != "system"]
-            client.conversation = system_msgs + other_msgs[-(self.MAX_CONVERSATION_LENGTH - len(system_msgs)):]
+        self._trim_conversation(client)
 
         async with httpx.AsyncClient(timeout=60.0) as http:
             try:
@@ -856,7 +851,6 @@ class NimWSSServer:
                 if not reply:
                     reply = "[Sin respuesta del LLM]"
 
-                # Guardar en historial
                 client.conversation.append({"role": "assistant", "content": reply})
                 return reply
 
@@ -866,6 +860,135 @@ class NimWSSServer:
             except Exception as e:
                 logger.error(f"API error: {e}")
                 raise
+
+    async def _stream_hermes_api(
+        self, client: ClientInfo, user_text: str, websocket: ServerConnection
+    ) -> str:
+        """Llama al Hermes API con streaming SSE y envía message.delta por WSS.
+
+        Yields deltas en tiempo real al Nim PC via message.delta.
+        Retorna el texto completo al finalizar.
+        """
+        if httpx is None:
+            return await self._call_hermes_api(client, user_text)
+
+        self._ensure_conversation(client)
+        client.conversation.append({"role": "user", "content": user_text})
+        self._trim_conversation(client)
+
+        full_text = ""
+
+        async with httpx.AsyncClient(timeout=120.0) as http:
+            try:
+                async with http.stream(
+                    "POST",
+                    self.hermes_api_url,
+                    json={
+                        "model": self.active_model,
+                        "messages": client.conversation,
+                        "stream": True,
+                    },
+                ) as resp:
+                    resp.raise_for_status()
+
+                    async for line in resp.aiter_lines():
+                        # Verificar cancelación
+                        if client.cancel_event and client.cancel_event.is_set():
+                            logger.info(f"STREAM CANCELADO por interrupt ({client.device_name})")
+                            break
+
+                        if not line or not line.startswith("data: "):
+                            continue
+
+                        data_str = line[6:]  # strip "data: "
+                        if data_str.strip() == "[DONE]":
+                            break
+
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = (
+                                chunk.get("choices", [{}])[0]
+                                .get("delta", {})
+                                .get("content", "")
+                            )
+                            if delta:
+                                full_text += delta
+                                # Enviar delta al Nim PC en tiempo real
+                                delta_msg = {
+                                    "type": "message_delta",
+                                    "text": delta,
+                                }
+                                encrypted = self.e2ee.encrypt_payload(
+                                    json.dumps(delta_msg)
+                                )
+                                await websocket.send(encrypted)
+                        except (json.JSONDecodeError, KeyError):
+                            continue
+
+            except httpx.HTTPStatusError as e:
+                logger.error(f"API HTTP error: {e.response.status_code}")
+                raise
+            except Exception as e:
+                logger.error(f"Stream API error: {e}")
+                raise
+
+        if not full_text:
+            full_text = "[Sin respuesta del LLM]"
+
+        client.conversation.append({"role": "assistant", "content": full_text})
+        return full_text
+
+    def _build_nim_system_prompt(self, client: ClientInfo) -> str:
+        """Construye el system prompt omnicanal para Nim PC."""
+        return (
+            "Eres NIM, el asistente agéntico omnicanal del Creador (Oscar).\n\n"
+            "══════════════ TOPOLOGÍA ACTUAL ══════════════\n"
+            "Estás sirviendo al Creador a través del cliente 'Nim PC' "
+            f"({client.device_type}, {client.device_name}).\n"
+            "El Creador te habla desde su PC personal conectada por WebSocket E2EE.\n\n"
+            "🏠 TU CUERPO (VPS Linux):\n"
+            "  • Razonamiento lógico y LLM\n"
+            "  • APIs externas: web_search, image_gen\n"
+            "  • Memoria persistente: Holographic (FTS5 + vectorial)\n"
+            "  • Ejecución de código Python en el VPS: code_execution\n\n"
+            "💻 LA PC DEL CREADOR (Windows, conectada por WSS):\n"
+            "  • nim_terminal: PowerShell/CMD en la PC local\n"
+            "  • nim_filesystem: Archivos y carpetas de la PC local\n"
+            "  • nim_browser: Chrome del Creador en la PC local\n\n"
+            "═══════════ REGLAS DE ORO ═══════════\n"
+            "1. SIEMPRE responde en español, con personalidad cálida.\n"
+            "2. SI el Creador pide interactuar con archivos, carpetas, "
+            "programas, configuración del sistema, o CUALQUIER acción local → "
+            "usa EXCLUSIVAMENTE nim_terminal (PowerShell/CMD) y nim_filesystem.\n"
+            "3. NUNCA uses tus herramientas nativas de terminal Linux del VPS "
+            "para tareas del PC del Creador. Si el Creador dice 'revisa mis "
+            "descargas', usa nim_filesystem o nim_terminal, NO tu terminal VPS.\n"
+            "4. SOLO usa tus herramientas VPS (web_search, code_execution, "
+            "image_gen) cuando la tarea requiera APIs externas, búsquedas, "
+            "o generación de contenido.\n"
+            "5. Si el Creador dice explícitamente 'en el servidor' o "
+            "'en el VPS', entonces sí puedes usar tus herramientas nativas.\n"
+            "6. Ante la duda, PREGUNTA: '¿Quieres que ejecute esto en tu PC "
+            "local o en el servidor VPS?'\n"
+            "7. SIEMPRE confirma acciones destructivas antes de ejecutar.\n"
+        )
+
+    def _ensure_conversation(self, client: ClientInfo) -> None:
+        """Asegura que el cliente tenga system prompt en su conversación."""
+        if not client.conversation:
+            client.conversation.append({
+                "role": "system",
+                "content": self._build_nim_system_prompt(client),
+            })
+
+    def _trim_conversation(self, client: ClientInfo) -> None:
+        """Limita el tamaño del historial de conversación."""
+        if len(client.conversation) > self.MAX_CONVERSATION_LENGTH:
+            system_msgs = [m for m in client.conversation if m["role"] == "system"]
+            other_msgs = [m for m in client.conversation if m["role"] != "system"]
+            client.conversation = system_msgs + other_msgs[
+                -(self.MAX_CONVERSATION_LENGTH - len(system_msgs)):
+            ]
 
     async def _verify_voice(self, wav_path: str) -> bool:
         """Verifica la identidad vocal usando voice_biometrics.py."""
@@ -915,6 +1038,73 @@ class NimWSSServer:
         except Exception as e:
             logger.error(f"Error en transcripción: {e}")
             return f"[Error de transcripción: {e}]"
+
+    # ─── Session Management ───
+
+    # Almacén de sesiones por session_id (sobrevive desconexiones)
+    _sessions: dict[str, dict[str, Any]] = {}
+
+    async def _handle_session_create(
+        self, message: dict, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Crea una sesión persistente y devuelve el session_id."""
+        sid = message.get("session_id") or str(uuid.uuid4())
+        client.session_id = sid
+        client.conversation = []  # Fresh start
+
+        self._sessions[sid] = {
+            "session_id": sid,
+            "device_name": client.device_name,
+            "device_type": client.device_type,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        logger.info(f"SESSION CREATE: {sid[:8]}... para {client.device_name}")
+        await self._send_event(websocket, {
+            "type": "session_created",
+            "session_id": sid,
+        })
+
+    async def _handle_session_resume(
+        self, message: dict, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Resume una sesión existente por session_id."""
+        sid = message.get("session_id", "")
+        if not sid:
+            await self._send_event(websocket, {
+                "type": "error",
+                "message": "session_id requerido para resume",
+            })
+            return
+
+        if sid in self._sessions:
+            client.session_id = sid
+            logger.info(f"SESSION RESUME: {sid[:8]}... para {client.device_name}")
+            await self._send_event(websocket, {
+                "type": "session_resumed",
+                "session_id": sid,
+                "message_count": len(client.conversation),
+            })
+        else:
+            # Sesión no encontrada — crear nueva
+            await self._handle_session_create(message, websocket, client)
+
+    async def _handle_session_interrupt(
+        self, message: dict, websocket: ServerConnection, client: ClientInfo
+    ) -> None:
+        """Cancela la request en curso para este cliente."""
+        if client.cancel_event:
+            client.cancel_event.set()
+            logger.info(f"INTERRUPT: {client.device_name}")
+            await self._send_event(websocket, {
+                "type": "interrupted",
+                "message": "Request cancelada",
+            })
+        else:
+            await self._send_event(websocket, {
+                "type": "interrupted",
+                "message": "No hay request activa para cancelar",
+            })
 
     # ─── UI Actions: Modelos + Soul (Fase 5: Enrutamiento UI ↔ WSS) ───
 
