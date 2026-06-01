@@ -1,0 +1,10 @@
+# Nim Phase 2 — Archivos sensibles (NO commitear)
+.nim_master_password
+*.pem
+*.key
+*.crt
+master_voiceprint.npy
+
+# Python
+__pycache__/
+*.pyc

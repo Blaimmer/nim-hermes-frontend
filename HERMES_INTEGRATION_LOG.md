@@ -273,3 +273,64 @@ Todas las features planeadas están implementadas, testeadas y verificadas. Sin 
 - HTTP local: http://localhost:3001
 - HTTPS Cloudflare: https://academy-friendship-automotive-band.trycloudflare.com
 - API Server: http://localhost:8642 (solo local)
+
+---
+
+## 2026-06-01 — Fase 2: Sincronización Omnicanal y E2EE
+
+### Objetivo
+Implementar la capa de seguridad y red para comunicación entre Hermes VPS y Nim PC (cliente Tauri nativo). El PC actúa como arnés de ejecución local con acceso nativo al sistema operativo; Hermes VPS es el cerebro que emite tool_calls cifrados.
+
+### Cambios Realizados
+
+#### 1. nim_e2ee.py — Encriptación Extremo a Extremo
+- **Archivo:** `nim_phase2/nim_e2ee.py`
+- **Función:** Espejo exacto de `src/lib/security.ts` (NimSecurity en TypeScript)
+- **KDF:** PBKDF2 con HMAC-SHA256, 100K iteraciones, salt=`"nim-omnichannel-salt-v1"`, salida 32 bytes (256 bits)
+- **Cifrado:** AES-256-GCM con IV aleatorio de 12 bytes por mensaje
+- **Formato wire:** `Base64( IV[12] || Ciphertext[N+16-byte GCM tag] )`
+- **Tests:** 5 pruebas de integridad: derivación, round-trip, entropía IV, contraseña incorrecta, payload corrupto — ✅ todas pasan
+
+#### 2. nim_wss_server.py — Servidor WebSocket Seguro
+- **Archivo:** `nim_phase2/nim_wss_server.py`
+- **Función:** Servidor WSS persistente para comunicación bidireccional Hermes ↔ Nim PC
+- **Handshake:** El cliente envía capabilities manifest cifrado → servidor responde con ACK + fingerprint
+- **Mensajería:** Toda la comunicación en JSON cifrado AES-256-GCM a través del túnel WebSocket
+- **Tool call bridge:** `dispatch_tool_call(client_id, tool_name, arguments)` → envía al PC → espera resultado (con timeout)
+- **Multi-dispositivo:** Registry de clientes conectados con capabilities por dispositivo
+- **Keep-alive:** Ping/pong cifrado cada 30s
+- **SSL:** Soporte para WSS con certificados (autofirmados para dev, Cloudflare Tunnel para prod)
+- **Smoke test:** `test_wss_client.py` — handshake, ping/pong, tool_result — ✅ todo verificado
+
+#### 3. voice_biometrics.py — Biometría Vocal
+- **Archivo:** `nim_phase2/voice_biometrics.py`
+- **Modelo:** SpeechBrain ECAPA-TDNN (`spkrec-ecapa-voxceleb`), embeddings de 192 dimensiones
+- **Enroll:** Registra huella vocal maestra del Creador (`.npy`)
+- **Verify:** Extrae embedding del audio entrante → cosine similarity contra huella maestra
+- **Umbral:** ≥ 0.85 → ACCESS_GRANTED | < 0.85 → ACCESS_DENIED
+- **CLI:** `enroll`, `verify`, `compare`, `info`, `test`
+
+#### 4. Configuración y SSL
+- **Certificados:** `nim_wss_cert.pem` + `nim_wss_key.pem` (RSA 4096, autofirmados para dev)
+- **Contraseña:** `.nim_master_password` (compartida con Nim PC, NUNCA viaja por red)
+- **Launcher:** `start_nim_phase2.sh` con flags `--ssl` y `--tunnel`
+- **.gitignore:** Protege archivos sensibles (.nim_master_password, *.pem, master_voiceprint.npy)
+
+### Verificación
+- ✅ `nim_e2ee.py` — 5/5 pruebas de integridad pasan
+- ✅ `nim_wss_server.py` — Handshake cifrado, ping/pong, tool_result verificado con cliente de prueba
+- ✅ `voice_biometrics.py` — Pruebas de cosine similarity pasan
+- ✅ Fingerprint de llave coincide entre servidor y cliente: `ebba8cf932354988`
+- ✅ Servidor WSS acepta conexiones en `ws://localhost:9876`
+
+### Fingerprint de Verificación (para Nim PC)
+```
+ebba8cf932354988
+```
+Este fingerprint DEBE ser idéntico en ambos lados. Si no coincide, la contraseña maestra es diferente.
+
+### Próximos Pasos (Fase 3)
+- Conectar Nim PC (Tauri) al WSS con el fingerprint verificado
+- Enviar primer tool_call cifrado → ejecución local → tool_result
+- Integrar biometría vocal en el flujo de comandos
+- Empaquetar como plugin de Hermes para registro automático de herramientas
