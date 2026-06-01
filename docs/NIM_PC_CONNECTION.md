@@ -406,7 +406,57 @@ Test-NetConnection -ComputerName 72.60.123.163 -Port 9876
 
 ---
 
-## 12. Enrutamiento UI ↔ WSS (Modelos + Soul)
+## 12. Streaming + Sesiones + Interrupción
+
+### 12.1 Streaming palabra por palabra (SSE)
+
+El WSS ahora usa streaming SSE de Hermes API. En vez de esperar la respuesta completa y enviar un solo `bot_message`, el flujo es:
+
+```
+PC → {type: "user_message", text: "Hola"}
+VPS → {type: "message_start"}
+VPS → {type: "message_delta", text: "H"}
+VPS → {type: "message_delta", text: "ola"}
+VPS → {type: "message_delta", text: ", ¿"}
+VPS → {type: "message_delta", text: "cómo"}
+...
+VPS → {type: "message_complete", text: "Hola, ¿cómo estás?"}
+```
+
+**Nim PC debe:**
+- Al recibir `message_start`: crear un mensaje assistant vacío en la UI
+- Al recibir `message_delta`: concatenar `text` al mensaje (efecto typewriter)
+- Al recibir `message_complete`: finalizar el mensaje
+
+### 12.2 Sesiones persistentes
+
+**Crear sesión:**
+```json
+PC → {"type": "session_create"}
+VPS → {"type": "session_created", "session_id": "uuid-xxx"}
+```
+
+**Resumir sesión:**
+```json
+PC → {"type": "session_resume", "session_id": "uuid-xxx"}
+VPS → {"type": "session_resumed", "session_id": "uuid-xxx", "message_count": 0}
+```
+
+El historial de conversación se mantiene por cliente mientras la conexión WSS está activa. Las sesiones permiten reconectar sin perder contexto.
+
+### 12.3 Interrupción de respuesta
+
+Si el usuario quiere cancelar una respuesta en curso:
+
+```json
+PC → {"type": "session_interrupt"}
+VPS → {"type": "interrupted", "message": "Request cancelada"}
+VPS → {"type": "message_complete", "text": "[Interrumpido]", "interrupted": true}
+```
+
+---
+
+## 13. Enrutamiento UI ↔ WSS (Modelos + Soul)
 
 Cuando Nim PC necesita interactuar con la configuración del VPS (cambiar modelo, editar bloques soul), ya no usa la REST API — todo va por el WebSocket.
 
