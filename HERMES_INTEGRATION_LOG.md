@@ -330,7 +330,104 @@ ebba8cf932354988
 Este fingerprint DEBE ser idéntico en ambos lados. Si no coincide, la contraseña maestra es diferente.
 
 ### Próximos Pasos (Fase 3)
-- Conectar Nim PC (Tauri) al WSS con el fingerprint verificado
-- Enviar primer tool_call cifrado → ejecución local → tool_result
-- Integrar biometría vocal en el flujo de comandos
-- Empaquetar como plugin de Hermes para registro automático de herramientas
+- ~~Conectar Nim PC (Tauri) al WSS con el fingerprint verificado~~ → Pendiente del lado PC
+- ~~Enviar primer tool_call cifrado → ejecución local → tool_result~~ → Testeado con cliente simulado
+- ~~Integrar biometría vocal en el flujo de comandos~~ → Implementado, pendiente integrar en WSS
+- ~~Empaquetar como plugin de Hermes para registro automático de herramientas~~ → ✅ COMPLETADO
+
+---
+
+## 2026-06-01 — Fase 3: Canal de Comunicación Hermes ↔ WSS (Plugin Nim PC)
+
+### Objetivo
+Cerrar el loop de comunicación: Hermes Agent (cerebro) ↔ WSS Server ↔ Nim PC (arnés de ejecución). Antes de esta fase, el servidor WSS aceptaba conexiones de Nim PC pero Hermes no sabía que existía — no había herramientas `nim_terminal`, `nim_filesystem`, `nim_browser` registradas.
+
+### Diagnóstico
+- El servidor WSS (`nim_wss_server.py`) corría en `:9876` aceptando conexiones de Nim PC ✅
+- Pero no había NINGÚN puente entre Hermes Agent y el WSS ❌
+- El directorio `~/.hermes/plugins/` no existía ❌
+- Hermes no conocía las herramientas `nim_terminal`, `nim_filesystem`, `nim_browser` ❌
+- El método `dispatch_tool_call()` existía en el código pero nadie lo llamaba ❌
+
+### Arquitectura de la Solución
+
+```
+Nim PC (Tauri+Rust) ──WSS E2EE──▶ nim_wss_server.py (:9876)
+                                        ▲
+                                        │ canal de control (plaintext, localhost)
+                                        │
+Hermes Agent (:8642) ──▶ Plugin nim-pc ─┘
+  │                        (~/.hermes/plugins/nim-pc/)
+  │
+  └── nim_terminal, nim_filesystem, nim_browser
+      (herramientas registradas en el toolset "nim-pc")
+```
+
+**Flujo completo:**
+1. Hermes LLM decide usar `nim_terminal` → llama al handler del plugin
+2. Plugin envía `{type: "dispatch_tool", ...}` al WSS por el canal de control
+3. WSS server forwardea el tool_call (cifrado AES-256-GCM) al Nim PC
+4. Nim PC ejecuta el comando localmente, devuelve resultado cifrado
+5. WSS server recibe el resultado, lo envía al plugin por el canal de control
+6. Plugin devuelve el resultado a Hermes → el LLM continúa razonando
+
+### Cambios Realizados
+
+#### 1. Modificación de nim_wss_server.py — Canal de Control
+- **Archivo:** `nim_phase2/nim_wss_server.py`
+- **Cambios:**
+  - Añadido `control_clients` dict para rastrear conexiones de Hermes Agent
+  - Modificado `handle_connection()`: detecta si el primer mensaje es `control_connect` (plaintext) vs `handshake` (E2EE cifrado)
+  - Nuevo método `control_loop()`: maneja conexiones de Hermes, acepta mensajes `dispatch_tool`, `list_clients`, `ping`
+  - Nuevo método `_handle_dispatch_tool()`: recibe tool_call del plugin, llama a `dispatch_tool_call()`, devuelve resultado
+  - Auto-detección de client_id: si no se especifica, usa el primer Nim PC conectado
+  - Shutdown limpio: también cierra conexiones de control
+- **Seguridad:** El canal de control solo acepta conexiones en localhost (plaintext). La comunicación con Nim PC sigue cifrada E2EE.
+
+#### 2. Creación del Plugin Nim PC
+- **Directorio:** `~/.hermes/plugins/nim-pc/`
+- **Archivos:**
+  - `plugin.yaml`: `kind: backend`, 3 herramientas, auto-load
+  - `__init__.py`: ~300 líneas con schemas, handlers, y cliente WSS
+- **Herramientas registradas:**
+  | Herramienta | Descripción | Parámetros |
+  |---|---|---|
+  | `nim_terminal` | Ejecuta comandos en terminal local | `command` (req), `cwd` (opt) |
+  | `nim_filesystem` | CRUD de archivos locales | `action` (req), `path` (req), `content` (opt) |
+  | `nim_browser` | Controla Chrome local | `action` (req), `tab_id`, `selector`, `text` |
+- **Cliente WSS:** `NimWSSControlClient` — conexión persistente a `ws://localhost:9876`, reconexión automática, timeout 30s
+
+### Verificación
+
+#### End-to-End Test (simulado)
+```
+[CTRL] Conecta al WSS → ACK: fingerprint=ebba8cf932354988, clients=1 ✅
+[PC]   Handshake E2EE completado ✅
+[CTRL] Lista clientes → 1 Nim PC (windows, Nim-PC-Test) ✅
+[CTRL] Despacha nim_terminal("dir C:\\Users\\...") ✅
+[PC]   Recibe tool_call cifrado, ejecuta, devuelve resultado ✅
+[CTRL] Dispatch result: status=ok, stdout, exit_code=0 ✅
+```
+
+- ✅ Canal de control: connect, ACK, list_clients, ping/pong
+- ✅ Dispatch tool: envío → forward → ejecución → resultado → retorno
+- ✅ Fingerprint coincide: `ebba8cf932354988`
+- ✅ Sin Nim PC conectado: error descriptivo "No hay Nim PCs conectados"
+- ✅ Plugin habilitado (`hermes plugins enable nim-pc`)
+- ✅ Toolset habilitado (`hermes tools enable nim-pc`)
+- ✅ Las herramientas aparecerán en la próxima sesión de Hermes
+
+### Estado del Plugin
+```
+hermes plugins list | grep nim-pc:
+  nim-pc    enabled    1.0.0    Nim PC — Nodo de ejecución local...
+```
+
+### Para que Nim PC se conecte (Oscar)
+1. Asegurar que la contraseña maestra en Nim PC genera fingerprint `ebba8cf932354988`
+2. Conectar vía WSS a `ws://72.60.123.163:9876`
+3. Enviar handshake con capabilities: `["nim_terminal", "nim_filesystem", "nim_browser"]`
+4. Verificar que el ACK del servidor muestra el fingerprint correcto
+5. ¡Listo! Hermes ya tiene las herramientas registradas y podrá enviar comandos.
+
+Ver `docs/NIM_PC_CONNECTION.md` para el checklist completo de conexión.

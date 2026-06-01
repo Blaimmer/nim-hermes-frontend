@@ -122,6 +122,9 @@ class NimWSSServer:
         # Registro de clientes conectados
         self.clients: dict[str, ClientInfo] = {}
 
+        # Conexiones de control (Hermes Agent)
+        self.control_clients: dict[str, ServerConnection] = {}
+
         # Tool calls pendientes en tránsito
         self.pending_calls: dict[str, PendingToolCall] = {}
 
@@ -175,10 +178,24 @@ class NimWSSServer:
         logger.info(f"NUEVA CONEXIÓN: {remote_addr} — ID asignado: {client_id[:8]}...")
 
         try:
-            # ── FASE 1: Handshake (el cliente envía su manifiesto de capacidades) ──
-            raw_handshake = await asyncio.wait_for(
+            # ── FASE 0: Detectar tipo de conexión ──
+            # Recibir primer mensaje (puede ser control plaintext o handshake cifrado)
+            raw_first_message = await asyncio.wait_for(
                 websocket.recv(), timeout=self.HANDSHAKE_TIMEOUT
             )
+
+            # Intentar parsear como control plaintext primero
+            try:
+                first_msg = json.loads(raw_first_message)
+                if first_msg.get("type") == "control_connect":
+                    # Conexión de control desde Hermes Agent (no cifrada, localhost)
+                    await self.control_loop(websocket, client_id, first_msg)
+                    return
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass  # No es plaintext JSON, continuar con handshake E2EE
+
+            # ── FASE 1: Handshake (el cliente envía su manifiesto de capacidades) ──
+            raw_handshake = raw_first_message
 
             # Descifrar el manifiesto
             try:
@@ -337,6 +354,115 @@ class NimWSSServer:
             except asyncio.CancelledError:
                 pass
 
+    # ─── Control Loop (Hermes Agent → WSS) ───
+
+    async def control_loop(
+        self, websocket: ServerConnection, client_id: str, connect_msg: dict
+    ) -> None:
+        """Loop para conexiones de control desde Hermes Agent (localhost, sin cifrar)."""
+        role = connect_msg.get("role", "hermes_agent")
+        agent_name = connect_msg.get("name", "hermes")
+        self.control_clients[client_id] = websocket
+        logger.info(
+            f"CONTROL CONNECTED: {agent_name} ({role}) — ID: {client_id[:8]}..."
+        )
+
+        # Enviar ACK al plugin
+        ack = {
+            "type": "control_ack",
+            "client_id": client_id,
+            "server_fingerprint": self.fingerprint,
+            "online_nim_clients": len(self.clients),
+            "message": f"Conectado al WSS server. {len(self.clients)} Nim PC(s) online.",
+        }
+        await websocket.send(json.dumps(ack))
+
+        try:
+            async for raw_message in websocket:
+                if not isinstance(raw_message, str):
+                    continue
+
+                try:
+                    message = json.loads(raw_message)
+                except json.JSONDecodeError:
+                    continue
+
+                msg_type = message.get("type", "unknown")
+                logger.debug(f"CONTROL [{msg_type}] de {agent_name}")
+
+                if msg_type == "dispatch_tool":
+                    await self._handle_dispatch_tool(websocket, message)
+                elif msg_type == "list_clients":
+                    clients = self.get_online_clients()
+                    await websocket.send(json.dumps({
+                        "type": "client_list",
+                        "clients": clients,
+                    }))
+                elif msg_type == "ping":
+                    await websocket.send(json.dumps({
+                        "type": "pong",
+                        "ts": time.time(),
+                    }))
+                else:
+                    logger.warning(f"CONTROL: tipo desconocido '{msg_type}'")
+
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.info(f"CONTROL DESCONECTADO: {agent_name} — {e.code}")
+        finally:
+            self.control_clients.pop(client_id, None)
+            logger.info(f"CONTROL REMOVED: {agent_name}")
+
+    async def _handle_dispatch_tool(
+        self, websocket: ServerConnection, message: dict
+    ) -> None:
+        """Despacha un tool_call de Hermes a un Nim PC y devuelve el resultado."""
+        call_id = message.get("call_id", "unknown")
+        target_client_id = message.get("client_id")
+        tool_name = message.get("tool_name", "unknown")
+        arguments = message.get("arguments", {})
+        timeout = message.get("timeout", 30.0)
+
+        # Si no se especifica client_id, usar el primer cliente conectado
+        if not target_client_id:
+            if not self.clients:
+                await websocket.send(json.dumps({
+                    "type": "dispatch_result",
+                    "call_id": call_id,
+                    "status": "error",
+                    "error": "No hay Nim PCs conectados",
+                }))
+                return
+            target_client_id = next(iter(self.clients.keys()))
+
+        logger.info(
+            f"DISPATCH: {tool_name}(...) → client={target_client_id[:8]}..."
+        )
+
+        try:
+            result = await self.dispatch_tool_call(
+                target_client_id, tool_name, arguments, timeout=timeout
+            )
+            await websocket.send(json.dumps({
+                "type": "dispatch_result",
+                "call_id": call_id,
+                "status": "ok",
+                "result": result,
+            }))
+        except asyncio.TimeoutError:
+            await websocket.send(json.dumps({
+                "type": "dispatch_result",
+                "call_id": call_id,
+                "status": "timeout",
+                "error": f"Timeout after {timeout}s",
+            }))
+        except (ValueError, ConnectionError) as e:
+            await websocket.send(json.dumps({
+                "type": "dispatch_result",
+                "call_id": call_id,
+                "status": "error",
+                "error": str(e),
+            }))
+
     # ─── Despacho de Tool Calls ───
 
     async def dispatch_tool_call(
@@ -454,10 +580,17 @@ class NimWSSServer:
         logger.info("DETENIENDO servidor Nim WSS...")
         self._running = False
 
-        # Cerrar todas las conexiones activas
+        # Cerrar todas las conexiones activas (Nim PCs)
         for client_id, client in list(self.clients.items()):
             try:
                 await client.websocket.close(1001, "Server shutting down")
+            except Exception:
+                pass
+
+        # Cerrar conexiones de control (Hermes Agent)
+        for ctrl_id, ctrl_ws in list(self.control_clients.items()):
+            try:
+                await ctrl_ws.close(1001, "Server shutting down")
             except Exception:
                 pass
 
