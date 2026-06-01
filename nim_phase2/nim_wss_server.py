@@ -118,22 +118,30 @@ class NimWSSServer:
 
     # Skills que se envían al Nim PC al conectar
     NIM_SKILLS = [
-        {"id": "nim_terminal", "name": "Terminal Local", "status": "Activa",
-         "description": "Ejecuta comandos en la PC del Creador (CMD, PowerShell, Bash)"},
-        {"id": "nim_filesystem", "name": "Sistema de Archivos", "status": "Activa",
-         "description": "Lee, escribe, borra y lista archivos locales"},
-        {"id": "nim_browser", "name": "Navegador Chrome", "status": "Activa",
-         "description": "Controla pestañas, navega, lee y hace clic en el navegador"},
+        {"id": "nim_terminal", "name": "Terminal PC", "status": "Activa",
+         "description": "Ejecuta comandos en la PC del Creador (CMD, PowerShell, Bash)",
+         "environment": "PC"},
+        {"id": "nim_filesystem", "name": "Archivos PC", "status": "Activa",
+         "description": "Lee, escribe, borra y lista archivos en la PC local",
+         "environment": "PC"},
+        {"id": "nim_browser", "name": "Navegador PC", "status": "Activa",
+         "description": "Controla pestañas, navega, lee y hace clic en Chrome de la PC",
+         "environment": "PC"},
         {"id": "voice_biometrics", "name": "Biometría Vocal", "status": "Activa",
-         "description": "Verifica identidad del Creador por voz (ECAPA-TDNN)"},
+         "description": "Verifica identidad del Creador por voz (ECAPA-TDNN)",
+         "environment": "VPS"},
         {"id": "web_search", "name": "Búsqueda Web", "status": "Activa",
-         "description": "Busca en internet (Tavily + DuckDuckGo)"},
-        {"id": "memory", "name": "Memoria Persistente", "status": "Activa",
-         "description": "Recuerda preferencias y contexto entre sesiones"},
-        {"id": "code_execution", "name": "Ejecución de Código", "status": "Activa",
-         "description": "Ejecuta scripts Python en el VPS"},
-        {"id": "image_gen", "name": "Generación de Imágenes", "status": "Activa",
-         "description": "Crea imágenes con IA"},
+         "description": "Busca en internet (Tavily + DuckDuckGo)",
+         "environment": "VPS"},
+        {"id": "holographic_memory", "name": "Memoria Persistente", "status": "Activa",
+         "description": "Base de datos FTS5 + vectorial a largo plazo",
+         "environment": "VPS"},
+        {"id": "code_execution", "name": "Ejecución Python", "status": "Activa",
+         "description": "Ejecuta scripts Python en el VPS",
+         "environment": "VPS"},
+        {"id": "image_gen", "name": "Gen. de Imágenes", "status": "Activa",
+         "description": "Crea imágenes con IA en el VPS",
+         "environment": "VPS"},
     ]
 
     def __init__(
@@ -770,11 +778,36 @@ class NimWSSServer:
             client.conversation.append({
                 "role": "system",
                 "content": (
-                    "Eres NIM, el asistente agéntico del Creador. "
-                    "Respondes en español. Eres conciso, útil y proactivo. "
-                    "Tienes acceso a la PC local del Creador vía nim_terminal, "
-                    "nim_filesystem, y nim_browser. "
-                    "Narras tu progreso brevemente cuando realizas acciones."
+                    "Eres NIM, el asistente agéntico omnicanal del Creador (Oscar).\n\n"
+                    "══════════════ TOPOLOGÍA ACTUAL ══════════════\n"
+                    "Estás sirviendo al Creador a través del cliente 'Nim PC' "
+                    f"({client.device_type}, {client.device_name}).\n"
+                    "El Creador te habla desde su PC personal conectada por WebSocket E2EE.\n\n"
+                    "🏠 TU CUERPO (VPS Linux):\n"
+                    "  • Razonamiento lógico y LLM\n"
+                    "  • APIs externas: web_search, image_gen\n"
+                    "  • Memoria persistente: Holographic (FTS5 + vectorial)\n"
+                    "  • Ejecución de código Python en el VPS: code_execution\n\n"
+                    "💻 LA PC DEL CREADOR (Windows, conectada por WSS):\n"
+                    "  • nim_terminal: PowerShell/CMD en la PC local\n"
+                    "  • nim_filesystem: Archivos y carpetas de la PC local\n"
+                    "  • nim_browser: Chrome del Creador en la PC local\n\n"
+                    "═══════════ REGLAS DE ORO ═══════════\n"
+                    "1. SIEMPRE responde en español, con personalidad cálida.\n"
+                    "2. SI el Creador pide interactuar con archivos, carpetas, "
+                    "programas, configuración del sistema, o CUALQUIER acción local → "
+                    "usa EXCLUSIVAMENTE nim_terminal (PowerShell/CMD) y nim_filesystem.\n"
+                    "3. NUNCA uses tus herramientas nativas de terminal Linux del VPS "
+                    "para tareas del PC del Creador. Si el Creador dice 'revisa mis "
+                    "descargas', usa nim_filesystem o nim_terminal, NO tu terminal VPS.\n"
+                    "4. SOLO usa tus herramientas VPS (web_search, code_execution, "
+                    "image_gen) cuando la tarea requiera APIs externas, búsquedas, "
+                    "o generación de contenido.\n"
+                    "5. Si el Creador dice explícitamente 'en el servidor' o "
+                    "'en el VPS', entonces sí puedes usar tus herramientas nativas.\n"
+                    "6. Ante la duda, PREGUNTA: '¿Quieres que ejecute esto en tu PC "
+                    "local o en el servidor VPS?'\n"
+                    "7. SIEMPRE confirma acciones destructivas antes de ejecutar.\n"
                 ),
             })
 
