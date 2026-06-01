@@ -406,7 +406,78 @@ Test-NetConnection -ComputerName 72.60.123.163 -Port 9876
 
 ---
 
-## 12. Metodología de Contexto Omnicanal (System Prompt del LLM)
+## 12. Enrutamiento UI ↔ WSS (Modelos + Soul)
+
+Cuando Nim PC necesita interactuar con la configuración del VPS (cambiar modelo, editar bloques soul), ya no usa la REST API — todo va por el WebSocket.
+
+### 12.1 get_models — Lista de modelos disponibles
+
+**UI envía:**
+```json
+{"type": "get_models"}
+```
+
+**VPS responde:**
+```json
+{
+  "type": "models_list",
+  "models": [
+    {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "provider": "deepseek", "active": true},
+    {"id": "gpt-4o", "name": "GPT-4o", "provider": "openai", "active": false},
+    ...
+  ]
+}
+```
+
+13 modelos built-in + custom models. El campo `active: true` marca el modelo en uso.
+
+### 12.2 switch_model — Cambiar modelo activo
+
+**UI envía:**
+```json
+{"type": "switch_model", "modelId": "gpt-4o"}
+```
+
+**VPS hace:**
+- Cambia el modelo activo en `.hermes-model-prefs.json`
+- Limpia el historial de conversación (nuevo modelo = fresh start)
+- Responde con `models_list` actualizado
+
+### 12.3 get_soul — Cargar bloques de memoria
+
+**UI envía:**
+```json
+{"type": "get_soul"}
+```
+
+**VPS responde:**
+```json
+{
+  "type": "soul_data",
+  "humanBlock": "Nombre: Oscar\nRol: Dueño de empresa...",
+  "personaBlock": "Eres NIM, el asistente...",
+  "taskBlock": "Tarea actual: ..."
+}
+```
+
+Lee de `SOUL.md`, `AGENT.md`, `AGENTS.md` en el repo.
+
+### 12.4 update_soul — Guardar bloque de memoria
+
+**UI envía:**
+```json
+{"type": "update_soul", "block": "human", "content": "Nuevo contenido..."}
+```
+
+`block` puede ser: `"human"`, `"persona"`, `"task"`.
+
+**VPS hace:**
+- Guarda el contenido en `SOUL.md` / `AGENT.md` / `AGENTS.md`
+- Responde con `bot_message`: "✅ Memoria 'human' actualizada correctamente."
+
+---
+
+## 13. Metodología de Contexto Omnicanal (System Prompt del LLM)
 
 Cuando Nim PC envía un `user_message` o `user_audio`, el servidor WSS inyecta automáticamente este contexto en el LLM antes de cada respuesta. **Esto resuelve la alucinación de entorno** — el LLM ya no intenta usar herramientas del VPS para tareas del PC.
 
@@ -452,4 +523,4 @@ Respuesta: "Usaría nim_terminal porque tus descargas están en la PC local
 
 **FIN DEL DOCUMENTO**
 
-*(Antigravity, este documento contiene TODO lo necesario. Commits relevantes: `d949c7b` (Fase 3), `c5040fe` (Fase 4), `95d6610` (Contexto Omnicanal).)*
+*(Antigravity, este documento contiene TODO lo necesario. Commits relevantes: `d949c7b` (Fase 3), `c5040fe` (Fase 4), `95d6610` (Contexto Omnicanal), `cfe262a` (Fase 5 UI).)*
