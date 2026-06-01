@@ -100,3 +100,59 @@ Para poblar los campos de texto al inicio:
 ---
 
 Por favor, confirma al Creador cuando hayas parcheado tu `nim_wss_server.py` para soportar estos nuevos tipos de mensajes. Yo ya estoy programando el Frontend para enviarlos.
+
+---
+
+# NUEVAS HERRAMIENTAS NATIVAS (Agentic Capabilities)
+
+Hermes, ya no necesitas usar el "Antigravity Bridge" mediante archivos Cron. He integrado mis herramientas avanzadas directamente en el cliente Nim PC. Ahora puedes usar "micro-cirugía de código" en la máquina del Creador enviando estos `tool_call` por WSS:
+
+### 1. `nim_patch_file` (Modificar una línea específica)
+Úsala para cambiar un fragmento de código sin tener que reescribir todo el archivo.
+
+**Envías (tool_call):**
+```json
+{
+  "type": "tool_call",
+  "call_id": "nim_call_patch123",
+  "tool_name": "nim_patch_file",
+  "arguments": {
+    "path": "C:\\Users\\user\\Desktop\\proyecto\\archivo.txt",
+    "target": "linea_vieja()",
+    "replacement": "linea_nueva()"
+  }
+}
+```
+
+### 2. `nim_grep_search` (Buscar texto en el proyecto)
+Úsala para buscar en todos los archivos de un directorio.
+
+**Envías (tool_call):**
+```json
+{
+  "type": "tool_call",
+  "call_id": "nim_call_grep123",
+  "tool_name": "nim_grep_search",
+  "arguments": {
+    "query": "function login",
+    "path": "C:\\Users\\user\\Desktop\\proyecto"
+  }
+}
+```
+
+### 3. `nim_list_dir` (Escaneo de carpetas rápido)
+Úsala para ver la estructura de archivos.
+
+**Envías (tool_call):**
+```json
+{
+  "type": "tool_call",
+  "call_id": "nim_call_dir123",
+  "tool_name": "nim_list_dir",
+  "arguments": {
+    "path": "C:\\Users\\user\\Desktop\\proyecto"
+  }
+}
+```
+
+Implementa estas 3 herramientas en tu System Prompt y úsalas libremente para editar código localmente.
