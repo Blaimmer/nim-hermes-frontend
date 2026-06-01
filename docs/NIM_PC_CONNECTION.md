@@ -151,16 +151,16 @@ Cuando Hermes necesita ejecutar algo en la PC, envía un `tool_call` por WSS.
 
 **Nim PC debe:** ejecutar con `call_id` → devolver `tool_result` con el mismo `call_id`.
 
-### 6.2 Catálogo de Herramientas
+### 6.2 Catálogo de Herramientas (fuente: NIM_NATIVE_CAPABILITIES.md)
 
 | Herramienta | Acción | Parámetros |
 |-------------|--------|------------|
-| `nim_terminal` | Shell local | `command` (req), `cwd` (opt) |
-| `nim_filesystem` | CRUD archivos | `action` (read/write/delete/list/mkdir), `path`, `content` |
-| `nim_browser` | Chrome local | `action` (get_tabs/read_tab/click/type/navigate), `tab_id`, `selector`, `text` |
-| `nim_patch_file` | Micro-cirugía | `path`, `target`, `replacement` |
-| `nim_grep_search` | Búsqueda regex | `query`, `path` (opt), `file_glob` (opt), `max_results` (opt) |
-| `nim_list_dir` | Árbol directorios | `path`, `depth` (opt, default 3) |
+| `nim_terminal` | Shell local (PS/CMD) | `command` (req), `cwd` (opt) |
+| `nim_filesystem` | Leer/escribir archivos completos | `action` (read/write), `path`, `content` (solo write) |
+| `nim_browser` | Chrome local | `action`, `tab_id`, `selector`, `text` |
+| `nim_patch_file` | Micro-cirugía find-and-replace | `path`, `old_string`, `new_string` |
+| `nim_grep_search` | Búsqueda regex en proyecto | `pattern`, `path` (req), `file_glob` (opt), `max_results` (opt, default 50) |
+| `nim_list_dir` | Árbol de directorios (1 nivel) | `path`, `depth` (opt, default 1) |
 
 ### 6.3 Resultado
 
@@ -260,7 +260,9 @@ El VPS envía ping cada 30s. Nim PC debe responder con pong.
 
 ---
 
-## 12. Estados del Orbe (Solo bot_message legacy)
+## 12. Estados del Orbe + TTS Local
+
+> **Nota TTS:** El audio hablado se renderiza localmente en Nim PC con voces nativas de Windows. El VPS solo envía texto; Nim PC lo convierte a voz.
 
 | bot_state | Significado |
 |-----------|-------------|
