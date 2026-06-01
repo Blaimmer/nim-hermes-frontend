@@ -85,33 +85,43 @@ Al conectarse al WebSocket, Nim PC DEBE enviar inmediatamente un mensaje de hand
 
 ### 3.3 Skills Update (inmediatamente después del ACK)
 
-Tras el handshake, el servidor envía automáticamente las habilidades disponibles:
+Tras el handshake, el servidor envía automáticamente las habilidades disponibles. **Cada skill ahora incluye el campo `environment`** (`"PC"` o `"VPS"`) para que el panel visual muestre dónde se ejecuta cada herramienta:
 
 ```json
 {
   "type": "skills_update",
   "skills": [
-    {"id": "nim_terminal", "name": "Terminal Local", "status": "Activa",
-     "description": "Ejecuta comandos en la PC del Creador (CMD, PowerShell, Bash)"},
-    {"id": "nim_filesystem", "name": "Sistema de Archivos", "status": "Activa",
-     "description": "Lee, escribe, borra y lista archivos locales"},
-    {"id": "nim_browser", "name": "Navegador Chrome", "status": "Activa",
-     "description": "Controla pestañas, navega, lee y hace clic en el navegador"},
+    {"id": "nim_terminal", "name": "Terminal PC", "status": "Activa",
+     "description": "Ejecuta comandos en la PC del Creador (CMD, PowerShell, Bash)",
+     "environment": "PC"},
+    {"id": "nim_filesystem", "name": "Archivos PC", "status": "Activa",
+     "description": "Lee, escribe, borra y lista archivos en la PC local",
+     "environment": "PC"},
+    {"id": "nim_browser", "name": "Navegador PC", "status": "Activa",
+     "description": "Controla pestañas, navega, lee y hace clic en Chrome de la PC",
+     "environment": "PC"},
     {"id": "voice_biometrics", "name": "Biometría Vocal", "status": "Activa",
-     "description": "Verifica identidad del Creador por voz (ECAPA-TDNN)"},
+     "description": "Verifica identidad del Creador por voz (ECAPA-TDNN)",
+     "environment": "VPS"},
     {"id": "web_search", "name": "Búsqueda Web", "status": "Activa",
-     "description": "Busca en internet (Tavily + DuckDuckGo)"},
-    {"id": "memory", "name": "Memoria Persistente", "status": "Activa",
-     "description": "Recuerda preferencias y contexto entre sesiones"},
-    {"id": "code_execution", "name": "Ejecución de Código", "status": "Activa",
-     "description": "Ejecuta scripts Python en el VPS"},
-    {"id": "image_gen", "name": "Generación de Imágenes", "status": "Activa",
-     "description": "Crea imágenes con IA"}
+     "description": "Busca en internet (Tavily + DuckDuckGo)",
+     "environment": "VPS"},
+    {"id": "holographic_memory", "name": "Memoria Persistente", "status": "Activa",
+     "description": "Base de datos FTS5 + vectorial a largo plazo",
+     "environment": "VPS"},
+    {"id": "code_execution", "name": "Ejecución Python", "status": "Activa",
+     "description": "Ejecuta scripts Python en el VPS",
+     "environment": "VPS"},
+    {"id": "image_gen", "name": "Gen. de Imágenes", "status": "Activa",
+     "description": "Crea imágenes con IA en el VPS",
+     "environment": "VPS"}
   ]
 }
 ```
 
-**Acción para Nim PC:** Poblar el panel visual de habilidades con estos datos.
+**3 PC | 5 VPS | 8 Total**
+
+**Acción para Nim PC:** Usar `environment` para mostrar un badge "PC" o "VPS" junto a cada habilidad en el panel visual.
 
 ---
 
@@ -396,6 +406,50 @@ Test-NetConnection -ComputerName 72.60.123.163 -Port 9876
 
 ---
 
+## 12. Metodología de Contexto Omnicanal (System Prompt del LLM)
+
+Cuando Nim PC envía un `user_message` o `user_audio`, el servidor WSS inyecta automáticamente este contexto en el LLM antes de cada respuesta. **Esto resuelve la alucinación de entorno** — el LLM ya no intenta usar herramientas del VPS para tareas del PC.
+
+### System prompt inyectado:
+
+```
+══════════════ TOPOLOGÍA ACTUAL ══════════════
+Estás sirviendo al Creador a través del cliente 'Nim PC' (windows, Nim-PC-Oscar).
+El Creador te habla desde su PC personal conectada por WebSocket E2EE.
+
+🏠 TU CUERPO (VPS Linux):
+  • Razonamiento lógico y LLM
+  • APIs externas: web_search, image_gen
+  • Memoria persistente: Holographic (FTS5 + vectorial)
+  • Ejecución de código Python en el VPS: code_execution
+
+💻 LA PC DEL CREADOR (Windows, conectada por WSS):
+  • nim_terminal: PowerShell/CMD en la PC local
+  • nim_filesystem: Archivos y carpetas de la PC local
+  • nim_browser: Chrome del Creador en la PC local
+
+═══════════ REGLAS DE ORO ═══════════
+1. SIEMPRE responde en español, con personalidad cálida.
+2. SI el Creador pide archivos, carpetas, programas → usa nim_terminal/nim_filesystem
+3. NUNCA uses terminal Linux VPS para tareas del PC del Creador
+4. SOLO usa herramientas VPS para APIs externas, búsquedas, generación
+5. Si dice explícitamente 'en el servidor' o 'en el VPS' → entonces sí usa nativas
+6. Ante la duda, PREGUNTA: '¿Quieres que ejecute esto en tu PC local o en el VPS?'
+7. SIEMPRE confirma acciones destructivas antes de ejecutar
+```
+
+### Verificación (test real con DeepSeek V4 Pro)
+```
+Pregunta: "revisa mis descargas"
+Respuesta: "Usaría nim_terminal porque tus descargas están en la PC local
+           con Windows y nim_terminal ejecuta comandos directamente en
+           PowerShell de tu máquina, no en el VPS."
+```
+
+**Antes** de este cambio, el LLM intentaba ejecutar `ls ~/Downloads` en el VPS Linux. **Ahora** entiende la topología y selecciona la herramienta correcta.
+
+---
+
 **FIN DEL DOCUMENTO**
 
-*(Antigravity, este documento contiene TODO lo necesario para que Nim PC complete la integración. Del lado VPS está 100% implementado y testeado. Commits relevantes: `d949c7b` (Fase 3), `c5040fe` (Fase 4).)*
+*(Antigravity, este documento contiene TODO lo necesario. Commits relevantes: `d949c7b` (Fase 3), `c5040fe` (Fase 4), `95d6610` (Contexto Omnicanal).)*
