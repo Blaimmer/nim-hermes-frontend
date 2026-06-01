@@ -231,6 +231,9 @@ Cuando Hermes decide usar una herramienta local, envía un tool_call que Nim PC 
 | `nim_terminal` | Ejecutar comando en shell local | `command` (req), `cwd` (opt) |
 | `nim_filesystem` | CRUD de archivos | `action` (read/write/delete/list/mkdir), `path`, `content` |
 | `nim_browser` | Controlar Chrome | `action` (get_tabs/read_tab/click/type/navigate), `tab_id`, `selector`, `text` |
+| `nim_patch_file` | Micro-cirugía de código | `path`, `old_string`, `new_string` |
+| `nim_grep_search` | Búsqueda regex en archivos | `pattern`, `path`, `file_glob`, `max_results` |
+| `nim_list_dir` | Árbol de directorios | `path`, `depth` |
 
 **IMPORTANTE:** Nim PC debe ejecutar la herramienta con el `call_id` recibido y devolver un `tool_result` con ese mismo `call_id`.
 
