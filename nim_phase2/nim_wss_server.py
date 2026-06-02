@@ -54,6 +54,12 @@ except ImportError:
     spec.loader.exec_module(nim_e2ee)
     NimE2EE = nim_e2ee.NimE2EE
 
+# ─── Connection Logger ───
+try:
+    from connection_logger import get_logger, ConnectionLogger
+except ImportError:
+    from nim_phase2.connection_logger import get_logger, ConnectionLogger
+
 # ─── Logging ───
 logging.basicConfig(
     level=logging.INFO,
@@ -235,6 +241,10 @@ class NimWSSServer:
         """Maneja una conexión entrante de Nim PC."""
         client_id = str(uuid.uuid4())
         remote_addr = websocket.remote_address
+        conn_log = get_logger()
+
+        # LOG: conexión TCP aceptada
+        conn_log.connection_accepted(remote_addr, client_id)
         logger.info(f"NUEVA CONEXIÓN: {remote_addr} — ID asignado: {client_id[:8]}...")
 
         try:
@@ -249,10 +259,18 @@ class NimWSSServer:
                 first_msg = json.loads(raw_first_message)
                 if first_msg.get("type") == "control_connect":
                     # Conexión de control desde Hermes Agent (no cifrada, localhost)
+                    conn_log.connection_control(
+                        remote_addr, client_id,
+                        role=first_msg.get("role", "hermes_agent"),
+                        name=first_msg.get("name", "hermes"),
+                    )
                     await self.control_loop(websocket, client_id, first_msg)
                     return
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass  # No es plaintext JSON, continuar con handshake E2EE
+
+            # LOG: handshake iniciado (primer mensaje recibido, no es control)
+            conn_log.handshake_started(client_id, remote_addr)
 
             # ── FASE 1: Handshake (el cliente envía su manifiesto de capacidades) ──
             raw_handshake = raw_first_message
@@ -262,6 +280,8 @@ class NimWSSServer:
                 handshake_json = self.e2ee.decrypt_payload(raw_handshake)
                 handshake = json.loads(handshake_json)
             except (ValueError, json.JSONDecodeError) as e:
+                error_reason = f"Decryption/parse failed: {e}"
+                conn_log.handshake_failed(client_id, error_reason, remote_addr)
                 logger.error(f"HANDSHAKE FALLIDO ({client_id[:8]}...): {e}")
                 await websocket.send(
                     self.e2ee.encrypt_payload(
@@ -278,6 +298,8 @@ class NimWSSServer:
 
             # Validar manifiesto
             if handshake.get("type") != "handshake":
+                error_reason = f"Invalid type: {handshake.get('type')}"
+                conn_log.handshake_failed(client_id, error_reason, remote_addr)
                 logger.error(f"HANDSHAKE INVALIDO: {handshake.get('type')}")
                 await websocket.send(
                     self.e2ee.encrypt_payload(
@@ -293,11 +315,15 @@ class NimWSSServer:
                 return
 
             device = handshake.get("device", {})
+            device_type = device.get("type", "unknown")
+            device_name = device.get("name", f"nim-{client_id[:6]}")
+            capabilities = handshake.get("capabilities", [])
+
             client_info = ClientInfo(
                 client_id=client_id,
-                device_type=device.get("type", "unknown"),
-                device_name=device.get("name", f"nim-{client_id[:6]}"),
-                capabilities=handshake.get("capabilities", []),
+                device_type=device_type,
+                device_name=device_name,
+                capabilities=capabilities,
                 connected_at=datetime.now(timezone.utc).isoformat(),
                 last_seen=datetime.now(timezone.utc).isoformat(),
                 websocket=websocket,
@@ -317,19 +343,28 @@ class NimWSSServer:
             await websocket.send(
                 self.e2ee.encrypt_payload(json.dumps(ack))
             )
-            logger.info(f"HANDSHAKE COMPLETADO: {client_info.device_name}")
+
+            # LOG: handshake completado
+            conn_log.handshake_completed(
+                client_id, device_name, device_type, capabilities, fingerprint
+            )
+            logger.info(f"HANDSHAKE COMPLETADO: {device_name}")
 
             # ── Enviar skills_update al PC tras handshake ──
             await self._send_skills_update(websocket, client_info)
+            conn_log.skills_sent(client_id, len(self.NIM_SKILLS))
 
             # ── FASE 2: Loop de mensajería principal ──
             await self.message_loop(websocket, client_info)
 
         except asyncio.TimeoutError:
+            conn_log.handshake_timeout(client_id, self.HANDSHAKE_TIMEOUT)
             logger.warning(f"TIMEOUT: Handshake no completado en {self.HANDSHAKE_TIMEOUT}s ({client_id[:8]}...)")
         except websockets.exceptions.ConnectionClosed as e:
+            conn_log.disconnected(client_id, "unknown", e.code, str(e.reason) if e.reason else None)
             logger.info(f"CONEXIÓN CERRADA: {client_id[:8]}... — {e.code} {e.reason}")
         except Exception as e:
+            conn_log.error(client_id, type(e).__name__, str(e))
             logger.error(f"ERROR ({client_id[:8]}...): {type(e).__name__}: {e}")
         finally:
             self.unregister_client(client_id)
@@ -338,6 +373,7 @@ class NimWSSServer:
         self, websocket: ServerConnection, client: ClientInfo
     ) -> None:
         """Loop principal de mensajería post-handshake."""
+        conn_log = get_logger()
 
         async def keep_alive():
             """Envía ping cada PING_INTERVAL segundos."""
@@ -369,6 +405,9 @@ class NimWSSServer:
                     decrypted = self.e2ee.decrypt_payload(raw_message)
                     message = json.loads(decrypted)
                 except (ValueError, json.JSONDecodeError) as e:
+                    conn_log.message_decrypt_failed(
+                        client.client_id, client.device_name, str(e)
+                    )
                     logger.error(f"DESCIFRADO FALLIDO ({client.device_name}): {e}")
                     error_resp = self.e2ee.encrypt_payload(
                         json.dumps(
@@ -386,6 +425,14 @@ class NimWSSServer:
 
                 # Despachar según tipo de mensaje
                 msg_type = message.get("type", "unknown")
+
+                # LOG: mensaje recibido (solo para tipos relevantes)
+                if msg_type not in ("ping", "pong"):
+                    conn_log.message_received(
+                        client.client_id, client.device_name,
+                        msg_type, len(raw_message), details=message
+                    )
+
                 logger.debug(
                     f"MENSAJE [{msg_type}] de {client.device_name}: "
                     f"{json.dumps(message, indent=None)[:200]}"
@@ -497,6 +544,7 @@ class NimWSSServer:
                     logger.warning(f"CONTROL: tipo desconocido '{msg_type}'")
 
         except websockets.exceptions.ConnectionClosed as e:
+            get_logger().control_disconnected(client_id, agent_name, e.code)
             logger.info(f"CONTROL DESCONECTADO: {agent_name} — {e.code}")
         finally:
             self.control_clients.pop(client_id, None)
@@ -532,6 +580,7 @@ class NimWSSServer:
             result = await self.dispatch_tool_call(
                 target_client_id, tool_name, arguments, timeout=timeout
             )
+            get_logger().dispatch_tool(call_id, tool_name, target_client_id, "ok")
             await websocket.send(json.dumps({
                 "type": "dispatch_result",
                 "call_id": call_id,
@@ -539,6 +588,7 @@ class NimWSSServer:
                 "result": result,
             }))
         except asyncio.TimeoutError:
+            get_logger().dispatch_tool(call_id, tool_name, target_client_id, "timeout", f"Timeout after {timeout}s")
             await websocket.send(json.dumps({
                 "type": "dispatch_result",
                 "call_id": call_id,
@@ -546,6 +596,7 @@ class NimWSSServer:
                 "error": f"Timeout after {timeout}s",
             }))
         except (ValueError, ConnectionError) as e:
+            get_logger().dispatch_tool(call_id, tool_name, target_client_id, "error", str(e))
             await websocket.send(json.dumps({
                 "type": "dispatch_result",
                 "call_id": call_id,
@@ -675,6 +726,12 @@ class NimWSSServer:
         }
         encrypted = self.e2ee.encrypt_payload(json.dumps(bot_msg))
         await websocket.send(encrypted)
+
+        # LOG: mensaje enviado
+        get_logger().message_sent(
+            client.client_id, client.device_name, "bot_message",
+            details={"bot_state": bot_state, "text": text}
+        )
         logger.info(
             f"BOT_MESSAGE → {client.device_name}: "
             f"state={bot_state}, text_len={len(text)}"
@@ -704,6 +761,10 @@ class NimWSSServer:
             "type": "message_start",
             "session_id": client.session_id or client.client_id,
         })
+        get_logger().message_sent(
+            client.client_id, client.device_name, "message_start",
+            details={"session_id": client.session_id or client.client_id}
+        )
 
         try:
             # Streaming SSE → message_delta × N
@@ -715,6 +776,10 @@ class NimWSSServer:
                 "text": full_text,
                 "session_id": client.session_id or client.client_id,
             })
+            get_logger().message_sent(
+                client.client_id, client.device_name, "message_complete",
+                details={"text": full_text, "interrupted": False}
+            )
 
         except asyncio.CancelledError:
             await self._send_event(websocket, {
@@ -722,6 +787,10 @@ class NimWSSServer:
                 "text": "[Interrumpido]",
                 "interrupted": True,
             })
+            get_logger().message_sent(
+                client.client_id, client.device_name, "message_complete",
+                details={"text": "[Interrumpido]", "interrupted": True}
+            )
         except Exception as e:
             logger.error(f"LLM ERROR para {client.device_name}: {e}")
             await self._send_event(websocket, {
