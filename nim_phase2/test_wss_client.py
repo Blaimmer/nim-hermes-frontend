@@ -55,6 +55,17 @@ async def test_client():
         )
         print(f"✅ Fingerprint coincide: {ack['key_fingerprint']}")
 
+        # ── Recibir skills_update (se envía automático post-handshake) ──
+        raw_skills = await asyncio.wait_for(ws.recv(), timeout=5)
+        skills = json.loads(e2ee.decrypt_payload(raw_skills))
+        if skills.get("type") == "skills_update":
+            count = len(skills.get("skills", []))
+            print(f"📥 Skills update: {count} skills recibidas")
+            for s in skills.get("skills", []):
+                print(f"  - {s['id']}: {s['name']} [{s['environment']}]")
+        else:
+            print(f"📥 Mensaje post-handshake: type={skills.get('type')}")
+
         # ── Ping/Pong ──
         ping_msg = {"type": "ping", "ts": 1234567890}
         encrypted_ping = e2ee.encrypt_payload(json.dumps(ping_msg))
@@ -66,22 +77,34 @@ async def test_client():
         print(f"📥 Pong recibido: type={pong['type']}")
         assert pong["type"] == "pong", f"Expected pong, got {pong['type']}"
 
-        # ── Enviar tool_result simulado ──
-        tool_result = {
-            "type": "tool_result",
-            "call_id": "nim_call_test123",
-            "tool_name": "nim_terminal",
-            "result": {
-                "stdout": "directorio listado correctamente",
-                "stderr": "",
-                "exit_code": 0,
-            },
-        }
-        await ws.send(e2ee.encrypt_payload(json.dumps(tool_result)))
-        print("📤 Tool result enviado (cifrado)")
+        # ── User message (chat test) ──
+        user_msg = {"type": "user_message", "text": "Hola desde smoke test - responde solo OK"}
+        await ws.send(e2ee.encrypt_payload(json.dumps(user_msg)))
+        print("📤 user_message enviado (cifrado)")
+
+        # Recibir streaming: message_start → message_delta(s) → message_complete
+        streaming_done = False
+        full_text = ""
+        while not streaming_done:
+            raw_msg = await asyncio.wait_for(ws.recv(), timeout=20)
+            msg = json.loads(e2ee.decrypt_payload(raw_msg))
+            t = msg.get("type")
+            if t == "message_start":
+                print(f"📥 Streaming iniciado (session: {msg.get('session_id', '?')})")
+            elif t == "message_delta":
+                full_text += msg.get("text", "")
+            elif t == "message_complete":
+                full_text = msg.get("text", full_text)
+                streaming_done = True
+                print(f"📥 Respuesta: {full_text[:200]}")
+            elif t == "bot_message":
+                print(f"📥 Bot message: {msg.get('text', '')[:200]}")
+                streaming_done = True
+            else:
+                print(f"📥 Mensaje: type={t}")
 
         print("\n" + "=" * 60)
-        print("✅ SMOKE TEST COMPLETO — Handshake, Ping/Pong, Tool Result")
+        print("✅ SMOKE TEST COMPLETO — Handshake + Skills + Ping/Pong + Chat")
         print("=" * 60)
 
 

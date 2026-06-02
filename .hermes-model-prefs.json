@@ -1,6 +1,7 @@
 {
-  "active": "deepseek-v4-pro",
+  "active": "gemini-3.5-flash",
   "quickModels": [
+    "gemini-3.5-flash",
     "deepseek-v4-pro",
     "gemini-2.5-flash",
     "claude-sonnet-4"

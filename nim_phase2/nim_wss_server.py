@@ -1211,6 +1211,7 @@ class NimWSSServer:
         {"id": "deepseek-r1", "name": "DeepSeek R1", "provider": "deepseek"},
         {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "provider": "google"},
         {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "provider": "google"},
+        {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "provider": "google"},
         {"id": "claude-sonnet-4", "name": "Claude Sonnet 4", "provider": "anthropic"},
         {"id": "claude-opus-4", "name": "Claude Opus 4", "provider": "anthropic"},
         {"id": "gpt-4o", "name": "GPT-4o", "provider": "openai"},
