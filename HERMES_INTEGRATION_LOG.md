@@ -4,6 +4,42 @@ Registro minucioso de cada cambio realizado para migrar NIM de un agente standal
 
 ---
 
+## 2026-06-02 — ConnectionLogger para WSS Server
+
+### Cambios
+- **Nuevo:** `nim_phase2/connection_logger.py` — Logger estructurado JSON Lines con rotación automática (2000 líneas)
+- **Modificado:** `nim_phase2/nim_wss_server.py` — Integración de ConnectionLogger en todos los eventos críticos
+
+### Eventos registrados
+| Evento | Cuándo |
+|--------|--------|
+| `connection_accepted` | TCP connection accepted (IP, puerto) |
+| `handshake_started` | Primer mensaje recibido, no es control |
+| `handshake_completed` | Handshake E2EE exitoso (device, capabilities, fingerprint) |
+| `handshake_failed` | Fallo de descifrado o tipo inválido |
+| `handshake_timeout` | Timeout de 15s sin handshake |
+| `skills_sent` | Skills update enviado tras handshake |
+| `message_received` | Mensaje del PC (tipo, preview, tamaño) |
+| `message_sent` | Mensaje al PC (bot_message, streaming) |
+| `disconnected` | Desconexión (código, razón) |
+| `dispatch_tool` | Tool dispatch (call_id, tool, status) |
+
+### Verificación
+- ✅ Test de conexión local: handshake + chat + desconexión registrados
+- ✅ Tail del log muestra el timeline completo de cada conexión
+- ✅ Stats del log: conexiones totales, handshakes fallidos, tamaño
+
+### Feature Status
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Connection logging | ✅ | JSON Lines, rotación 2000 líneas |
+| Log de handshakes | ✅ | Incluye IP, device, capabilities |
+| Log de mensajes | ✅ | RX/TX con preview y tipo |
+| Log de disconnects | ✅ | Código y razón |
+| Stats/tail utilities | ✅ | `conn_log.tail(n)` y `conn_log.stats()` |
+
+---
+
 ## 2026-05-27 — Fase 1: Conexión Inicial
 
 ### Objetivo
