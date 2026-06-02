@@ -770,7 +770,7 @@ class NimWSSServer:
             # Streaming SSE → message_delta × N
             full_text = await self._stream_hermes_api(client, text, websocket)
 
-            # Notificar completado
+            # Notificar completado (streaming format)
             await self._send_event(websocket, {
                 "type": "message_complete",
                 "text": full_text,
@@ -780,6 +780,12 @@ class NimWSSServer:
                 client.client_id, client.device_name, "message_complete",
                 details={"text": full_text, "interrupted": False}
             )
+
+            # FALLBACK: también enviar bot_message para apps que no soportan streaming
+            await self._send_bot_message(websocket, client, full_text, "speaking")
+            # Luego idle después de 500ms
+            await asyncio.sleep(0.5)
+            await self._send_bot_message(websocket, client, "", "idle")
 
         except asyncio.CancelledError:
             await self._send_event(websocket, {
