@@ -34,10 +34,14 @@ import {
   HelpCircle,
   Hash,
   Plus,
-  Maximize2
+  Maximize2,
+  History,
+  X
 } from 'lucide-react';
 import { SystemStatus, LogEntry, ChatMessage, Skill, Stats, HermesModel } from './types';
 import { AgentesPanel, TareasPanel, ClientesPanel, CronPanel, DocumentosPanel, GraficasPanel } from './DashV2';
+import { SessionList, sessionMessagesToChat } from './components/sessions/SessionList';
+import type { SessionInfo, SessionMessage } from './lib/hermes/types';
 
 // Web Speech API for browser vocal compatibility
 const SpeechRecognitionAPI = 
@@ -113,6 +117,10 @@ export default function App() {
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isWakeWordMode, setIsWakeWordMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'thought_engine' | 'chat_history' | 'agentic_core' | 'agentes' | 'tareas' | 'clientes' | 'cron' | 'documentos' | 'graficas'>('chat_history');
+
+  // F2.2 — Sesiones VPS (gateway :9119): panel de lista + sesión reanudada
+  const [showSessions, setShowSessions] = useState<boolean>(false);
+  const [activeSession, setActiveSession] = useState<{ id: string; title: string } | null>(null);
 
   // Agent Core States (Working Memory, Knowledge Graph, Auto-Skills)
   const [coreStatus, setCoreStatus] = useState<{
@@ -695,6 +703,14 @@ export default function App() {
       modelUsed: sender === 'nim' ? activeModelName.toUpperCase() : undefined
     };
     setChatMessages(prev => [...prev, newMessage]);
+  };
+
+  // F2.2 — Resume de sesión VPS: carga los últimos mensajes en el chat
+  const handleResumeSession = (session: SessionInfo, messages: SessionMessage[]) => {
+    setChatMessages(sessionMessagesToChat(session, messages));
+    setActiveSession({ id: session.id, title: session.title?.trim() || 'Sesión sin título' });
+    setActiveTab('chat_history');
+    addLog('system', `Sesión VPS reanudada: ${session.title?.trim() || session.id.slice(0, 8)} (${messages.length} msgs)`);
   };
 
   // Sound synthesis
@@ -1858,6 +1874,19 @@ export default function App() {
                   <Cpu className="w-3 h-3" />
                   MÁTRICE
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSessions(v => !v)}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    showSessions
+                      ? 'bg-violet-500/10 text-violet-200 border-violet-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-violet-300'
+                  }`}
+                  title="Lista de sesiones VPS (gateway :9119)"
+                >
+                  <History className="w-3 h-3" />
+                  SESIONES
+                </button>
               </div>
               {/* Fila 2 — Dashboard V2 */}
               <div className="flex space-x-1 mt-1">
@@ -1957,6 +1986,28 @@ export default function App() {
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </header>
+
+            {/* F2.2 — Indicador de sesión VPS reanudada */}
+            {activeSession && activeTab === 'chat_history' && (
+              <div className="flex items-center justify-between gap-2 mb-1.5 px-1.5 py-1 rounded border border-violet-500/30 bg-violet-500/5 shrink-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse flex-shrink-0"></span>
+                  <span className="text-[8px] text-violet-300 font-bold uppercase tracking-wider flex-shrink-0 font-mono">
+                    SESIÓN:
+                  </span>
+                  <span className="text-[8.5px] text-cyan-200 font-mono font-bold truncate">{activeSession.title}</span>
+                  <span className="text-[7.5px] text-cyan-600 font-mono truncate hidden md:inline">{activeSession.id}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSession(null)}
+                  className="p-0.5 hover:bg-violet-500/20 rounded text-violet-400 transition-colors flex-shrink-0"
+                  title="Cerrar sesión activa"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
 
             {/* TAB CONTENT 1: CHAT COMPONENT */}
             {activeTab === 'chat_history' && (
@@ -2234,6 +2285,13 @@ export default function App() {
               <span>Memoria activa del núcleo distribuida.</span>
             </footer>
           </section>
+
+          {/* F2.2 — PANEL SESIONES VPS (gateway :9119) */}
+          {showSessions && (
+            <section className="panel p-3 rounded-md flex flex-col gap-2 max-h-[340px] overflow-hidden">
+              <SessionList activeSessionId={activeSession?.id ?? null} onResume={handleResumeSession} />
+            </section>
+          )}
 
           {/* TELEMETRY SUB-PANEL */}
           <section className="panel p-3 rounded-md shrink-0">
