@@ -36,11 +36,13 @@ import {
   Plus,
   Maximize2,
   History,
+  FolderOpen,
   X
 } from 'lucide-react';
 import { SystemStatus, LogEntry, ChatMessage, Skill, Stats, HermesModel } from './types';
 import { AgentesPanel, TareasPanel, ClientesPanel, CronPanel, DocumentosPanel, GraficasPanel } from './DashV2';
 import { SessionList, sessionMessagesToChat } from './components/sessions/SessionList';
+import { FileBrowser } from './components/files/FileBrowser';
 import type { SessionInfo, SessionMessage } from './lib/hermes/types';
 
 // Web Speech API for browser vocal compatibility
@@ -121,6 +123,9 @@ export default function App() {
   // F2.2 — Sesiones VPS (gateway :9119): panel de lista + sesión reanudada
   const [showSessions, setShowSessions] = useState<boolean>(false);
   const [activeSession, setActiveSession] = useState<{ id: string; title: string } | null>(null);
+
+  // F2.3 — Explorador de archivos local (PC): panel toggle en el aside
+  const [showFiles, setShowFiles] = useState<boolean>(false);
 
   // Agent Core States (Working Memory, Knowledge Graph, Auto-Skills)
   const [coreStatus, setCoreStatus] = useState<{
@@ -1887,6 +1892,19 @@ export default function App() {
                   <History className="w-3 h-3" />
                   SESIONES
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFiles(v => !v)}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    showFiles
+                      ? 'bg-emerald-500/10 text-emerald-200 border-emerald-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-emerald-300'
+                  }`}
+                  title="Explorador de archivos local (commands Tauri nativos)"
+                >
+                  <FolderOpen className="w-3 h-3" />
+                  ARCHIVOS
+                </button>
               </div>
               {/* Fila 2 — Dashboard V2 */}
               <div className="flex space-x-1 mt-1">
@@ -2290,6 +2308,13 @@ export default function App() {
           {showSessions && (
             <section className="panel p-3 rounded-md flex flex-col gap-2 max-h-[340px] overflow-hidden">
               <SessionList activeSessionId={activeSession?.id ?? null} onResume={handleResumeSession} />
+            </section>
+          )}
+
+          {/* F2.3 — PANEL ARCHIVOS (explorador local vía Tauri) */}
+          {showFiles && (
+            <section className="panel p-3 rounded-md flex flex-col gap-2 max-h-[340px] overflow-hidden">
+              <FileBrowser />
             </section>
           )}
 

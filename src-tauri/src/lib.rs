@@ -332,6 +332,59 @@ $bytes = [System.IO.File]::ReadAllBytes($path)
     }
 }
 
+// ── NIM PC v2: git review (F2.4) ──────────────────────────────────────────
+// Ejecuta git en la PC local vía Command (funciona en Windows con git.exe
+// en PATH y en Linux/Mac). Devuelve JSON string con stdout/stderr/exit_code.
+
+fn run_git(args: &[&str], cwd: &str) -> Result<String, String> {
+    use std::process::Command;
+    let mut cmd = Command::new("git");
+    cmd.args(args);
+    if !cwd.is_empty() {
+        cmd.current_dir(cwd);
+    }
+    match cmd.output() {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            let exit_code = out.status.code().unwrap_or(-1);
+            Ok(json!({"stdout": stdout.trim(), "stderr": stderr.trim(), "exit_code": exit_code}).to_string())
+        }
+        Err(e) => Err(json!({"error": format!("git no encontrado: {}", e)}).to_string()),
+    }
+}
+
+#[tauri::command]
+fn nim_git_status(cwd: String) -> Result<String, String> {
+    // --porcelain=v1 da XY + path por línea; -z no hace falta para UI simple.
+    run_git(&["status", "--porcelain=v1", "--branch"], &cwd)
+}
+
+#[tauri::command]
+fn nim_git_diff(cwd: String, path: Option<String>, staged: Option<bool>) -> Result<String, String> {
+    let mut args = vec!["diff"];
+    if staged.unwrap_or(false) {
+        args.push("--cached");
+    }
+    if let Some(p) = path {
+        if !p.is_empty() {
+            args.push("--");
+            args.push(&p);
+        }
+    }
+    run_git(&args, &cwd)
+}
+
+#[tauri::command]
+fn nim_git_commit(cwd: String, message: String) -> Result<String, String> {
+    let add = run_git(&["add", "-A"], &cwd)?;
+    let commit = run_git(&["commit", "-m", &message], &cwd)?;
+    // Combinar ambos resultados; si add falló, su stderr ya viene en el JSON.
+    let add_json: serde_json::Value = serde_json::from_str(&add).unwrap_or(serde_json::json!({}));
+    let commit_json: serde_json::Value = serde_json::from_str(&commit).unwrap_or(serde_json::json!({}));
+    Ok(json!({"add": add_json, "commit": commit_json}).to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -344,7 +397,10 @@ pub fn run() {
       nim_file_ops,
       nim_code_exec,
       nim_checkpoint,
-      nim_computer_use
+      nim_computer_use,
+      nim_git_status,
+      nim_git_diff,
+      nim_git_commit
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
