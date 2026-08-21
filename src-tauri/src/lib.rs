@@ -385,6 +385,44 @@ fn nim_git_commit(cwd: String, message: String) -> Result<String, String> {
     Ok(json!({"add": add_json, "commit": commit_json}).to_string())
 }
 
+// ── NIM PC v2: Antigravity CLI (F4) ───────────────────────────────────────
+// Ejecuta agy (Antigravity CLI) en la PC local en modo no interactivo
+// (agy --print 'prompt'). Detecta agy en PATH; si falta, devuelve error claro
+// con instrucción de instalación. En Windows agy.exe debe estar en PATH.
+
+#[tauri::command]
+fn nim_antigravity(prompt: String, cwd: Option<String>, timeout_secs: Option<u64>) -> Result<String, String> {
+    use std::process::Command;
+    let mut cmd = Command::new(if cfg!(target_os = "windows") { "agy.exe" } else { "agy" });
+    cmd.arg("--print").arg(&prompt);
+    if let Some(dir) = cwd {
+        if !dir.is_empty() {
+            cmd.current_dir(&dir);
+        }
+    }
+    if let Some(t) = timeout_secs {
+        if t > 0 {
+            cmd.env("AGY_PRINT_TIMEOUT", t.to_string());
+        }
+    }
+    match cmd.output() {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            let exit_code = out.status.code().unwrap_or(-1);
+            Ok(json!({"stdout": stdout.trim(), "stderr": stderr.trim(), "exit_code": exit_code}).to_string())
+        }
+        Err(e) => {
+            // agy no encontrado (ErrorKind::NotFound) → instrucción clara.
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Err(json!({"error": "agy no está en PATH. Instálalo con: agy install (o https://antigravity.dev). El panel Antigravity requiere la CLI en la PC."}).to_string())
+            } else {
+                Err(json!({"error": format!("Error al ejecutar agy: {}", e)}).to_string())
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -400,7 +438,8 @@ pub fn run() {
       nim_computer_use,
       nim_git_status,
       nim_git_diff,
-      nim_git_commit
+      nim_git_commit,
+      nim_antigravity
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

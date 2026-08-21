@@ -63,7 +63,8 @@ export class NimWssClient {
           "nim_file_ops",
           "nim_code_exec",
           "nim_checkpoint",
-          "nim_computer_use"
+          "nim_computer_use",
+          "nim_antigravity"
         ],
         version: "2.0.0"
       };
@@ -280,6 +281,13 @@ export class NimWssClient {
           x: args.x || 0,
           y: args.y || 0,
           text: args.text || ""
+        });
+        resultPayload.result = { stdout: output, exit_code: 0 };
+      } else if (name === "nim_antigravity") {
+        const output = await invoke("nim_antigravity", {
+          prompt: args.prompt || "",
+          cwd: args.cwd || "",
+          timeout_secs: args.timeout_secs || 0
         });
         resultPayload.result = { stdout: output, exit_code: 0 };
       } else {
