@@ -53,7 +53,17 @@ export class NimWssClient {
           os: "Windows 11",
           hostname: "creator-desktop"
         },
-        capabilities: ["nim_terminal", "nim_filesystem", "nim_browser"],
+        capabilities: [
+          "nim_terminal",
+          "nim_filesystem",
+          "nim_browser",
+          "nim_patch_file",
+          "nim_grep_search",
+          "nim_list_dir",
+          "nim_file_ops",
+          "nim_code_exec",
+          "nim_checkpoint"
+        ],
         version: "2.0.0"
       };
 
@@ -241,6 +251,27 @@ export class NimWssClient {
         resultPayload.result = { stdout: output, exit_code: 0 };
       } else if (name === "nim_grep_search") {
         const output = await invoke("nim_grep_search", { query: args.query, path: args.path });
+        resultPayload.result = { stdout: output, exit_code: 0 };
+      } else if (name === "nim_file_ops") {
+        const output = await invoke("nim_file_ops", {
+          action: args.action,
+          path: args.path,
+          dest: args.dest || ""
+        });
+        resultPayload.result = { stdout: output, exit_code: 0 };
+      } else if (name === "nim_code_exec") {
+        const output = await invoke("nim_code_exec", {
+          lang: args.lang || "python",
+          code: args.code,
+          timeoutSecs: args.timeout_secs || 30
+        });
+        resultPayload.result = { stdout: output, exit_code: 0 };
+      } else if (name === "nim_checkpoint") {
+        const output = await invoke("nim_checkpoint", {
+          action: args.action,
+          path: args.path,
+          label: args.label || ""
+        });
         resultPayload.result = { stdout: output, exit_code: 0 };
       } else {
         resultPayload.result = { error: `Tool ${name} not implemented yet.` };
