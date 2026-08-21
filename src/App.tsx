@@ -49,6 +49,7 @@ import { FileBrowser } from './components/files/FileBrowser';
 import { GitReviewPane } from './components/git/GitReviewPane';
 import { TerminalPane } from './components/terminal/TerminalPane';
 import { MemoryGraphPane } from './components/memory/MemoryGraphPane';
+import { AntigravityPanel } from './components/antigravity/AntigravityPanel';
 import type { SessionInfo, SessionMessage } from './lib/hermes/types';
 
 // Web Speech API for browser vocal compatibility
@@ -141,6 +142,9 @@ export default function App() {
 
   // F2.6 — Memoria VPS (star map + skills gateway :9119): panel toggle en el aside
   const [showMemory, setShowMemory] = useState<boolean>(false);
+
+  // F4.3 — Antigravity CLI (agy --print): panel toggle en el aside
+  const [showAgy, setShowAgy] = useState<boolean>(false);
 
   // Agent Core States (Working Memory, Knowledge Graph, Auto-Skills)
   const [coreStatus, setCoreStatus] = useState<{
@@ -1959,6 +1963,19 @@ export default function App() {
                   <BrainCircuit className="w-3 h-3" />
                   MEMORIA
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAgy(v => !v)}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    showAgy
+                      ? 'bg-orange-500/10 text-orange-200 border-orange-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-orange-300'
+                  }`}
+                  title="Panel Antigravity (agy --print, command Tauri nim_antigravity)"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  AGY
+                </button>
               </div>
               {/* Fila 2 — Dashboard V2 */}
               <div className="flex space-x-1 mt-1">
@@ -2390,6 +2407,13 @@ export default function App() {
           {showMemory && (
             <section className="panel p-3 rounded-md flex flex-col gap-2 max-h-[400px] overflow-hidden">
               <MemoryGraphPane />
+            </section>
+          )}
+
+          {/* F4.3 — PANEL ANTIGRAVITY (CLI agy --print vía command Tauri) */}
+          {showAgy && (
+            <section className="panel p-3 rounded-md flex flex-col gap-2 max-h-[400px] overflow-hidden">
+              <AntigravityPanel />
             </section>
           )}
 
