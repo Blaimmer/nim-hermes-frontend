@@ -255,6 +255,83 @@ fn copy_recursive(src: &str, dst: &str) -> Result<(), String> {
     }
 }
 
+// ── NIM PC v2: computer use (F3) ──────────────────────────────────────────
+// Control de pantalla en Windows vía PowerShell nativo (sin deps Rust extra).
+//   screenshot  → PNG en %TEMP%/nim_screen.png (Base64 en el resultado)
+//   click       → click en (x, y) usando user32
+//   type        → escribe texto con SendKeys
+//   move        → mueve el cursor a (x, y)
+#[tauri::command]
+fn nim_computer_use(action: String, x: Option<i32>, y: Option<i32>, text: Option<String>) -> Result<String, String> {
+    use std::process::Command;
+
+    let ps_script = match action.as_str() {
+        "screenshot" => r#"
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+$path = Join-Path $env:TEMP 'nim_screen.png'
+$bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+$bytes = [System.IO.File]::ReadAllBytes($path)
+[Convert]::ToBase64String($bytes)
+"#.to_string(),
+        "click" => {
+            let cx = x.unwrap_or(0);
+            let cy = y.unwrap_or(0);
+            format!(
+                "Add-Type -AssemblyName System.Windows.Forms\n\
+                 [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point({}, {})\n\
+                 $s = New-Object System.Windows.Forms.SendKeys\n\
+                 [System.Windows.Forms.SendKeys]::SendWait('{{ENTER}}')\n\
+                 'clicked {} {}'",
+                cx, cy, cx, cy
+            )
+        }
+        "move" => {
+            let cx = x.unwrap_or(0);
+            let cy = y.unwrap_or(0);
+            format!(
+                "Add-Type -AssemblyName System.Windows.Forms\n\
+                 [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point({}, {})\n\
+                 'moved {} {}'",
+                cx, cy, cx, cy
+            )
+        }
+        "type" => {
+            let t = text.clone().unwrap_or_default();
+            format!(
+                "Add-Type -AssemblyName System.Windows.Forms\n\
+                 [System.Windows.Forms.SendKeys]::SendWait('{}')\n\
+                 'typed'",
+                t.replace("'", "''").replace("{", "{{").replace("}", "}}")
+            )
+        }
+        _ => return Err(json!({"error": "Unknown action (screenshot|click|move|type)"}).to_string()),
+    };
+
+    let output = if cfg!(target_os = "windows") {
+        Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(ps_script)
+            .output()
+    } else {
+        return Err(json!({"error": "computer_use solo Windows (por ahora)"}).to_string());
+    };
+
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            let exit_code = out.status.code().unwrap_or(-1);
+            Ok(json!({"stdout": stdout.trim(), "stderr": stderr.trim(), "exit_code": exit_code}).to_string())
+        }
+        Err(e) => Err(json!({"error": e.to_string()}).to_string()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -266,7 +343,8 @@ pub fn run() {
       nim_grep_search,
       nim_file_ops,
       nim_code_exec,
-      nim_checkpoint
+      nim_checkpoint,
+      nim_computer_use
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

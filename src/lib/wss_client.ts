@@ -62,7 +62,8 @@ export class NimWssClient {
           "nim_list_dir",
           "nim_file_ops",
           "nim_code_exec",
-          "nim_checkpoint"
+          "nim_checkpoint",
+          "nim_computer_use"
         ],
         version: "2.0.0"
       };
@@ -271,6 +272,14 @@ export class NimWssClient {
           action: args.action,
           path: args.path,
           label: args.label || ""
+        });
+        resultPayload.result = { stdout: output, exit_code: 0 };
+      } else if (name === "nim_computer_use") {
+        const output = await invoke("nim_computer_use", {
+          action: args.action,
+          x: args.x || 0,
+          y: args.y || 0,
+          text: args.text || ""
         });
         resultPayload.result = { stdout: output, exit_code: 0 };
       } else {
