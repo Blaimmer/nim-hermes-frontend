@@ -541,3 +541,41 @@ El servidor WSS ahora acepta y responde a estos tipos de mensaje:
 - Enviar `bot_state: ""` (vacío) significa "no cambiar estado"
 - `skills_update` se envía automáticamente justo después del handshake
 - La biometría vocal requiere `pip install speechbrain torch` y una huella registrada con `python voice_biometrics.py enroll <audio.wav>`
+---
+
+## 2026-08-21 — Reconstrucción NIM PC v2 + Seguridad + Infra VPS
+
+### Contexto
+Retomamos el proyecto tras ~1 mes. Hermes Agent actualizado v0.18 → v0.20.4 (9,825 commits).
+Nimrod decide: la app oficial de Hermes Desktop NO cumple el rol (no controla su PC local).
+Plan: reconstruir NIM PC (Tauri) usando código fuente de Hermes Desktop (MIT) como referencia
+técnica, manteniendo visual NIM + voz 100% funcional + tools locales vía :9876.
+
+### Seguridad — Fix CRÍTICO WSS bridge
+- **Vulnerabilidad:** nim_wss_server.py aceptaba cualquier `control_connect` sin verificación
+  (cualquier persona en internet podía enviar dispatch_tool → ejecutar comandos en la PC de Nimrod)
+- **Fix aplicado:** canal de control SOLO loopback + token compartido `NIM_WSS_CONTROL_TOKEN`
+  (64 hex en ~/.hermes/.env). Fail-closed: sin token configurado, canal rechaza.
+- **Pruebas:** sin token → UNAUTHORIZED ✓ | token malo → UNAUTHORIZED ✓ | externo → FORBIDDEN ✓ | local+token → OK ✓
+- **Fix plugin nim-pc:** handlers `(args, task_id=None)` → `(args, **kwargs)` — API v0.20.x
+  inyecta session_id en el dispatch. Backup: __init__.py.backup-20260821
+
+### Infraestructura VPS (servicios systemd user)
+| Servicio | Puerto | Función |
+|----------|--------|---------|
+| hermes-serve.service | :9119 | Backend Desktop (hermes serve, auth basic user=nim) |
+| hermes-wss-nim.service | :9876 | WSS bridge a Nim PC (token + loopback) |
+| hermes-dashboard.service | :8081 | Web dashboard (login nim/***) |
+| hermes-gateway.service | :8642 | Telegram + API server (reparado, polling healthy) |
+
+### Arquitectura acordada (3 canales)
+- **:9119** → UI/sesiones/chat (app oficial o protocolo portado)
+- **:9876** → tools de la PC local (nim_terminal, nim_filesystem, nim_browser, nim_patch_file, nim_grep_search, nim_list_dir + nuevas)
+- **Telegram** → movilidad
+- Regla: skills = estrategia en VPS; ejecución = PC local cuando la tarea es local
+
+### Plan de reconstrucción
+- Guardado en: docs/plans/2026-08-21-nim-pc-v2.md
+- 5 fases / 17 tareas: protocolo cliente, UI (visual NIM), tools del harness (127 disponibles),
+  integración Antigravity (agy), build Windows
+- Pilares fijos: visual NIM (no Hermes), voz 100% con biometría ECAPA-TDNN, skills locales

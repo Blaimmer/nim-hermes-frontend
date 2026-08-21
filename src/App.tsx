@@ -37,6 +37,7 @@ import {
   Maximize2
 } from 'lucide-react';
 import { SystemStatus, LogEntry, ChatMessage, Skill, Stats, HermesModel } from './types';
+import { AgentesPanel, TareasPanel, ClientesPanel, CronPanel, DocumentosPanel, GraficasPanel } from './DashV2';
 
 // Web Speech API for browser vocal compatibility
 const SpeechRecognitionAPI = 
@@ -111,7 +112,7 @@ export default function App() {
   const [inputVal, setInputVal] = useState<string>('');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isWakeWordMode, setIsWakeWordMode] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'thought_engine' | 'chat_history' | 'agentic_core'>('chat_history');
+  const [activeTab, setActiveTab] = useState<'thought_engine' | 'chat_history' | 'agentic_core' | 'agentes' | 'tareas' | 'clientes' | 'cron' | 'documentos' | 'graficas'>('chat_history');
 
   // Agent Core States (Working Memory, Knowledge Graph, Auto-Skills)
   const [coreStatus, setCoreStatus] = useState<{
@@ -1800,6 +1801,81 @@ export default function App() {
                   MÁTRICE
                 </button>
               </div>
+              {/* Fila 2 — Dashboard V2 */}
+              <div className="flex space-x-1 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('agentes')}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    activeTab === 'agentes'
+                      ? 'bg-emerald-500/10 text-emerald-200 border-emerald-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-emerald-300'
+                  }`}
+                >
+                  <Grid className="w-3 h-3" />
+                  AGENTES
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tareas')}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    activeTab === 'tareas'
+                      ? 'bg-amber-500/10 text-amber-200 border-amber-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-amber-300'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  TAREAS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('clientes')}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    activeTab === 'clientes'
+                      ? 'bg-purple-500/10 text-purple-200 border-purple-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-purple-300'
+                  }`}
+                >
+                  <Database className="w-3 h-3" />
+                  CLIENTES
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('cron')}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    activeTab === 'cron'
+                      ? 'bg-rose-500/10 text-rose-200 border-rose-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-rose-300'
+                  }`}
+                >
+                  <Clock className="w-3 h-3" />
+                  CRON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('documentos')}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    activeTab === 'documentos'
+                      ? 'bg-sky-500/10 text-sky-200 border-sky-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-sky-300'
+                  }`}
+                >
+                  <Layers className="w-3 h-3" />
+                  DOCS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('graficas')}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    activeTab === 'graficas'
+                      ? 'bg-indigo-500/10 text-indigo-200 border-indigo-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-indigo-300'
+                  }`}
+                >
+                  <Activity className="w-3 h-3" />
+                  GRÁFICAS
+                </button>
+              </div>
 
               <button
                 type="button"
@@ -2048,6 +2124,50 @@ export default function App() {
                   )}
                 </div>
 
+              </div>
+            )}
+
+            {/* ═══ DASHBOARD V2 — NUEVOS PANELES ═══ */}
+
+            {/* TAB: AGENTES — Visualización de agentes NIM */}
+            {activeTab === 'agentes' && (
+              <div className="h-[300px] overflow-y-auto pr-1 space-y-2 custom-scrollbar text-xs">
+                <AgentesPanel />
+              </div>
+            )}
+
+            {/* TAB: TAREAS — Gestión de tareas y procesos */}
+            {activeTab === 'tareas' && (
+              <div className="h-[300px] overflow-y-auto pr-1 space-y-2 custom-scrollbar text-xs">
+                <TareasPanel />
+              </div>
+            )}
+
+            {/* TAB: CLIENTES — Pipeline de prospección */}
+            {activeTab === 'clientes' && (
+              <div className="h-[300px] overflow-y-auto pr-1 space-y-2 custom-scrollbar text-xs">
+                <ClientesPanel />
+              </div>
+            )}
+
+            {/* TAB: CRON — Cron jobs */}
+            {activeTab === 'cron' && (
+              <div className="h-[300px] overflow-y-auto pr-1 space-y-2 custom-scrollbar text-xs">
+                <CronPanel />
+              </div>
+            )}
+
+            {/* TAB: DOCUMENTOS — Lector de documentos */}
+            {activeTab === 'documentos' && (
+              <div className="h-[300px] overflow-y-auto pr-1 space-y-2 custom-scrollbar text-xs">
+                <DocumentosPanel />
+              </div>
+            )}
+
+            {/* TAB: GRÁFICAS — Métricas y rendimiento */}
+            {activeTab === 'graficas' && (
+              <div className="h-[300px] overflow-y-auto pr-1 space-y-2 custom-scrollbar text-xs">
+                <GraficasPanel />
               </div>
             )}
 

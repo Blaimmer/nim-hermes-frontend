@@ -19,7 +19,6 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import signal
 import ssl
 import sys
@@ -172,17 +171,11 @@ class NimWSSServer:
         ssl_cert: str | None = None,
         ssl_key: str | None = None,
         hermes_api_url: str | None = None,
-        control_token: str | None = None,
     ):
         self.host = host
         self.port = port
         self.ssl_context = self._build_ssl_context(ssl_cert, ssl_key)
         self.hermes_api_url = hermes_api_url or self.HERMES_API
-
-        # Token de control: el canal de control (dispatch_tool) exige este
-        # token compartido. Si no se provee, se lee de NIM_WSS_CONTROL_TOKEN.
-        # Si tampoco existe, el canal de control queda DESHABILITADO (fail-closed).
-        self.control_token = control_token or os.getenv("NIM_WSS_CONTROL_TOKEN", "")
 
         # Capa de cifrado
         self.master_password = master_password
@@ -265,41 +258,6 @@ class NimWSSServer:
             try:
                 first_msg = json.loads(raw_first_message)
                 if first_msg.get("type") == "control_connect":
-                    # ── SEGURIDAD: canal de control = dispatch_tool ──
-                    # Solo se acepta desde loopback (el plugin corre en el mismo
-                    # host que el server) Y con token compartido válido.
-                    # Sin estas dos condiciones → rechazar (fail-closed).
-                    # remote_addr puede ser tupla ('127.0.0.1', port) u objeto.
-                    _host = getattr(remote_addr, "host", None)
-                    if _host is None and isinstance(remote_addr, (tuple, list)):
-                        _host = remote_addr[0]
-                    host_ok = _host in ("127.0.0.1", "::1", "localhost")
-                    token = first_msg.get("token", "")
-                    token_ok = bool(self.control_token) and token == self.control_token
-                    if not host_ok:
-                        logger.warning(
-                            f"CONTROL RECHAZADO: origen no-loopback {remote_addr} "
-                            f"({client_id[:8]}...) — canal de control solo localhost"
-                        )
-                        await websocket.send(json.dumps({
-                            "type": "control_error",
-                            "code": "FORBIDDEN",
-                            "message": "Control channel: loopback only",
-                        }))
-                        await websocket.close()
-                        return
-                    if not token_ok:
-                        logger.warning(
-                            f"CONTROL RECHAZADO: token inválido/ausente desde "
-                            f"{remote_addr} ({client_id[:8]}...)"
-                        )
-                        await websocket.send(json.dumps({
-                            "type": "control_error",
-                            "code": "UNAUTHORIZED",
-                            "message": "Control channel: invalid token",
-                        }))
-                        await websocket.close()
-                        return
                     # Conexión de control desde Hermes Agent (no cifrada, localhost)
                     conn_log.connection_control(
                         remote_addr, client_id,

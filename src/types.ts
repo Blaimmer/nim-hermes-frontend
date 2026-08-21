@@ -41,3 +41,58 @@ export interface Stats {
   memory: string;
   networkStatus: 'NOMINAL' | 'DEGRADED' | 'DISCONNECTED';
 }
+
+// ===== NIM DASHBOARD V2 — Nuevos tipos =====
+
+export interface NIMAgent {
+  id: string;
+  name: string;
+  role: string;
+  icon: string;
+  status: 'online' | 'idle' | 'offline' | 'error';
+  lastActive: string;
+  metrics: {
+    tasksCompleted: number;
+    successRate: number;
+    avgTime: string;
+  };
+  description: string;
+}
+
+export interface NIMTask {
+  id: string;
+  title: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  agentId: string;
+  priority: 'high' | 'medium' | 'low';
+  createdAt: string;
+  description: string;
+}
+
+export interface NIMCronJob {
+  id: string;
+  name: string;
+  schedule: string;
+  nextRun: string;
+  lastRun: string;
+  status: 'active' | 'paused' | 'error';
+  prompt: string;
+}
+
+export interface NIMClient {
+  id: string;
+  name: string;
+  company: string;
+  status: 'lead' | 'contacted' | 'negotiation' | 'closed' | 'lost';
+  lastContact: string;
+  notes: string;
+  value: string;
+}
+
+export interface MetricPoint {
+  timestamp: string;
+  sessions: number;
+  tokens: number;
+  toolCalls: number;
+  memoryUsed: string;
+}
