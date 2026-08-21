@@ -38,6 +38,7 @@ import {
   History,
   FolderOpen,
   GitBranch,
+  SquareTerminal,
   X
 } from 'lucide-react';
 import { SystemStatus, LogEntry, ChatMessage, Skill, Stats, HermesModel } from './types';
@@ -45,6 +46,7 @@ import { AgentesPanel, TareasPanel, ClientesPanel, CronPanel, DocumentosPanel, G
 import { SessionList, sessionMessagesToChat } from './components/sessions/SessionList';
 import { FileBrowser } from './components/files/FileBrowser';
 import { GitReviewPane } from './components/git/GitReviewPane';
+import { TerminalPane } from './components/terminal/TerminalPane';
 import type { SessionInfo, SessionMessage } from './lib/hermes/types';
 
 // Web Speech API for browser vocal compatibility
@@ -131,6 +133,9 @@ export default function App() {
 
   // F2.4 — Git review (repo local): panel toggle en el aside
   const [showGit, setShowGit] = useState<boolean>(false);
+
+  // F2.5 — Terminal embebido (xterm + plugin-shell): panel toggle en el aside
+  const [showTerminal, setShowTerminal] = useState<boolean>(false);
 
   // Agent Core States (Working Memory, Knowledge Graph, Auto-Skills)
   const [coreStatus, setCoreStatus] = useState<{
@@ -1923,6 +1928,19 @@ export default function App() {
                   <GitBranch className="w-3 h-3" />
                   GIT
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTerminal(v => !v)}
+                  className={`px-2 py-1 text-[9.5px] font-mono uppercase tracking-wider rounded border transition flex items-center gap-1 ${
+                    showTerminal
+                      ? 'bg-fuchsia-500/10 text-fuchsia-200 border-fuchsia-500/50 font-bold glow-text'
+                      : 'bg-transparent text-cyan-600 border-transparent hover:text-fuchsia-300'
+                  }`}
+                  title="Terminal embebido (xterm.js + plugin-shell)"
+                >
+                  <SquareTerminal className="w-3 h-3" />
+                  TERMINAL
+                </button>
               </div>
               {/* Fila 2 — Dashboard V2 */}
               <div className="flex space-x-1 mt-1">
@@ -2340,6 +2358,13 @@ export default function App() {
           {showGit && (
             <section className="panel p-3 rounded-md flex flex-col gap-2 max-h-[340px] overflow-hidden">
               <GitReviewPane />
+            </section>
+          )}
+
+          {/* F2.5 — PANEL TERMINAL EMBEBIDO (xterm.js + plugin-shell) */}
+          {showTerminal && (
+            <section className="panel p-3 rounded-md flex flex-col gap-2 max-h-[400px] overflow-hidden">
+              <TerminalPane />
             </section>
           )}
 
