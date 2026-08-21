@@ -225,6 +225,64 @@ export default function App() {
       addLog(type as any, message);
     };
 
+    // Streaming palabra por palabra: message_start/delta/complete
+    let streamMsgId: string | null = null;
+    let streamAccum = "";
+    wssClient.onStreamStart = () => {
+      streamAccum = "";
+      streamMsgId = `msg-${Date.now()}`;
+      setChatMessages(prev => [...prev, {
+        id: streamMsgId!,
+        sender: 'nim',
+        text: '▍',
+        timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+        modelUsed: 'HERMES-VPS'
+      }]);
+      setOrbState('thinking');
+    };
+    wssClient.onStreamDelta = (text: string) => {
+      streamAccum += text;
+      if (!streamMsgId) return;
+      setChatMessages(prev => prev.map(m =>
+        m.id === streamMsgId ? { ...m, text: streamAccum + '▍' } : m
+      ));
+    };
+    wssClient.onStreamComplete = (text: string) => {
+      const finalText = text || streamAccum;
+      if (!streamMsgId) {
+        // Sin streaming: fallback a bot_message-style append
+        setChatMessages(prev => [...prev, {
+          id: `msg-${Date.now()}`,
+          sender: 'nim',
+          text: finalText,
+          timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+          modelUsed: 'HERMES-VPS'
+        }]);
+      } else {
+        setChatMessages(prev => prev.map(m =>
+          m.id === streamMsgId ? { ...m, text: finalText } : m
+        ));
+      }
+      streamMsgId = null;
+      streamAccum = "";
+      setOrbState('idle');
+
+      // Hablar la respuesta si no está silenciado (CLOUD TTS)
+      if (!ttsMuted) {
+        const clean = finalText.replace(/```[\s\S]*?```/g, "").replace(/[*_~`#\[\]{}]/g, "").trim();
+        if (!clean) return;
+        if ((window as any).playCloudTTS) {
+          (window as any).playCloudTTS(clean);
+        } else {
+          const u = new SpeechSynthesisUtterance(clean);
+          u.lang = 'es-ES';
+          u.rate = 1.05;
+          u.pitch = 0.95;
+          window.speechSynthesis.speak(u);
+        }
+      }
+    };
+
     wssClient.onBotMessage = (text: string, state: string) => {
       setChatMessages(prev => [...prev, {
         id: `msg-${Date.now()}`,

@@ -7,6 +7,10 @@ export class NimWssClient {
   private password = "";
   private url = "ws://72.60.123.163:9876";
   public onBotMessage: ((text: string, state: string) => void) | null = null;
+  public onStreamStart: ((sessionId?: string) => void) | null = null;
+  public onStreamDelta: ((text: string) => void) | null = null;
+  public onStreamComplete: ((text: string, interrupted?: boolean) => void) | null = null;
+  public onToolCall: ((call: any) => void) | null = null;
   public onSkillsUpdate: ((skills: any[]) => void) | null = null;
   public onModelsList: ((models: any[]) => void) | null = null;
   public onSoulData: ((soul: any) => void) | null = null;
@@ -104,12 +108,29 @@ export class NimWssClient {
       return;
     }
 
+    // ── STREAMING (message_start / message_delta / message_complete) ──
+    if (data.type === "message_start") {
+      if (this.onStreamStart) this.onStreamStart(data.session_id);
+      return;
+    }
+
+    if (data.type === "message_delta") {
+      if (this.onStreamDelta) this.onStreamDelta(data.text || "");
+      return;
+    }
+
+    if (data.type === "message_complete") {
+      if (this.onStreamComplete) this.onStreamComplete(data.text || "", !!data.interrupted);
+      return;
+    }
+
     if (data.type === "skills_update" && this.onSkillsUpdate) {
       this.onSkillsUpdate(data.skills);
       return;
     }
 
     if (data.type === "tool_call") {
+      if (this.onToolCall) this.onToolCall(data);
       await this.executeToolCall(data);
       return;
     }
