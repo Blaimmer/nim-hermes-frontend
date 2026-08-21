@@ -22,6 +22,15 @@ export class NimWssClient {
     this.initWebSocket();
   }
 
+  disconnect() {
+    clearTimeout(this.reconnectTimer);
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
   private initWebSocket() {
     if (this.ws) {
       this.ws.close();
