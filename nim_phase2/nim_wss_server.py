@@ -194,6 +194,12 @@ class NimWSSServer:
         self.ssl_context = self._build_ssl_context(ssl_cert, ssl_key)
         self.hermes_api_url = hermes_api_url or self.HERMES_API
 
+        # API key del gateway (API server OpenAI-compatible :8642). Sin ella el
+        # gateway responde 401 a /v1/chat/completions (Pitfall 6 de nim-auto-mejora).
+        self.api_key = os.getenv("API_SERVER_KEY", "")
+        if not self.api_key:
+            logger.warning("API_SERVER_KEY no configurada — el chat al gateway :8642 fallará con 401")
+
         # Token de control: el canal de control (dispatch_tool) exige este
         # token compartido. Si no se provee, se lee de NIM_WSS_CONTROL_TOKEN.
         # Si tampoco existe, el canal de control queda DESHABILITADO (fail-closed).
@@ -973,8 +979,12 @@ class NimWSSServer:
 
         async with httpx.AsyncClient(timeout=60.0) as http:
             try:
+                headers = {}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
                 resp = await http.post(
                     self.hermes_api_url,
+                    headers=headers,
                     json={
                         "model": self.active_model,
                         "messages": client.conversation,
@@ -1021,9 +1031,13 @@ class NimWSSServer:
 
         async with httpx.AsyncClient(timeout=120.0) as http:
             try:
+                headers = {}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
                 async with http.stream(
                     "POST",
                     self.hermes_api_url,
+                    headers=headers,
                     json={
                         "model": self.active_model,
                         "messages": client.conversation,
