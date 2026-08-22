@@ -169,10 +169,10 @@ fn nim_file_ops(action: String, path: String, dest: Option<String>) -> Result<St
 #[tauri::command]
 fn nim_code_exec(lang: String, code: String, timeout_secs: Option<u64>) -> Result<String, String> {
     use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Command;
     use std::time::Duration;
 
-    let timeout = timeout_secs.unwrap_or(30);
+    let _timeout = timeout_secs.unwrap_or(30);
     let tmp_dir = std::env::temp_dir();
     let script_path = tmp_dir.join(format!("nim_exec_{}.{}", std::process::id(), if lang == "python" { "py" } else { "js" }));
 
@@ -366,10 +366,10 @@ fn nim_git_diff(cwd: String, path: Option<String>, staged: Option<bool>) -> Resu
     if staged.unwrap_or(false) {
         args.push("--cached");
     }
-    if let Some(p) = path {
+    if let Some(ref p) = path {
         if !p.is_empty() {
             args.push("--");
-            args.push(&p);
+            args.push(p.as_str());
         }
     }
     run_git(&args, &cwd)
