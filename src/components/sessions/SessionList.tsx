@@ -27,6 +27,17 @@ import type { ChatMessage } from '../../types';
 // Servidor por defecto (hermes serve local). Puede sobreescribirse vía variable
 // de entorno NIM_SERVE_URL en el build Tauri.
 const DEFAULT_SERVE_HTTP = 'http://127.0.0.1:9119';
+// IP pública del VPS: dentro de la app Tauri (PC Windows) 127.0.0.1 es la PC
+// local, no el VPS — el serve solo corre en el VPS.
+const VPS_SERVE_HTTP = 'http://72.60.123.163:9119';
+
+/** Resuelve la base del serve: en runtime Tauri apunta al VPS, en navegador localhost. */
+function resolveServeBase(): string {
+  if (typeof window !== 'undefined' && Boolean((window as any)?.__TAURI_INTERNALS__?.invoke)) {
+    return VPS_SERVE_HTTP;
+  }
+  return DEFAULT_SERVE_HTTP;
+}
 
 // Credencial de desarrollo espejo de smoke-test.ts (el estándar del proyecto ya
 // tiene credenciales inline hardcodeadas — wssClient.connect("NimMasterKey...")).
@@ -142,7 +153,7 @@ export function SessionList({ activeSessionId, onResume }: SessionListProps) {
     let cancelled = false;
     (async () => {
       try {
-        setServeBaseUrl((typeof process !== 'undefined' && process.env?.NIM_SERVE_URL) || DEFAULT_SERVE_HTTP);
+        setServeBaseUrl((typeof process !== 'undefined' && process.env?.NIM_SERVE_URL) || resolveServeBase());
         // Establece la conexión WS del gateway (necesaria para chat/resume futuro).
         await connectionManager.connectServe();
       } catch {

@@ -14,10 +14,20 @@ export type ConnMode = 'serve' | 'bridge' | 'dual'
 
 const DEFAULT_SERVE_URL = 'ws://127.0.0.1:9119'
 const DEFAULT_BRIDGE_URL = 'ws://72.60.123.163:9876'
+// Dentro de la app Tauri (PC Windows) 127.0.0.1 es la PC local, no el VPS.
+const VPS_SERVE_URL = 'ws://72.60.123.163:9119'
+
+/** En runtime Tauri el gateway :9119 solo existe en el VPS — apuntar a su IP pública. */
+function resolveServeUrl(): string {
+  if (typeof window !== 'undefined' && Boolean((window as any)?.__TAURI_INTERNALS__?.invoke)) {
+    return VPS_SERVE_URL
+  }
+  return DEFAULT_SERVE_URL
+}
 
 export class ConnectionManager {
   mode: ConnMode = 'dual'
-  serveUrl = DEFAULT_SERVE_URL
+  serveUrl = resolveServeUrl()
   bridgeUrl = DEFAULT_BRIDGE_URL
 
   // Cliente JSON-RPC para :9119 (portado de Hermes Desktop)
