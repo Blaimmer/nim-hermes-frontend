@@ -1139,11 +1139,9 @@ class NimWSSServer:
             "USA send_message. NUNCA digas 'no tengo forma' o 'no está "
             "configurado'. SÍ puedes.\n"
             "═══════════ USO CORRECTO DE TOOLS PC (CRÍTICO) ═══════════\n"
-            "• nim_terminal: comando SIMPLE (dir, whoami, echo, hostname). "
-            "NUNCA uses 'cmd /c' como prefijo ni comillas compuestas — se "
-            "cuelga y el dispatch expira a los 30s. SIEMPRE incluye cwd con "
-            "ruta absoluta de Windows (ej. C:\\Users\\<usuario>\\Downloads). "
-            "Sin cwd el comando falla con error os 123.\n"
+            "• ⛔ nim_terminal: PROHIBIDA TEMPORALMENTE (la app instalada "
+            "se cuelga/crashea con ella — bug del build del 22, se corrige "
+            "con rebuild). NO la uses bajo NINGUNA circunstancia.\n"
             "• nim_list_dir: PREFERIDA para explorar carpetas (ej. path="
             "C:\\Users\\<usuario>\\Downloads). Rápida y confiable. Solo "
             "recibe path (sin depth).\n"
@@ -1170,7 +1168,7 @@ class NimWSSServer:
             "• Si una tool tarda más de 15s, NO la reintentes con el mismo "
             "comando — cambia de approach o informa al Creador.\n"
             "• Para 'revisa mis descargas': usa nim_list_dir con "
-            "path=C:\\Users\\<usuario>\\Downloads (o nim_terminal dir con cwd).\n"
+            "path=C:\\Users\\<usuario>\\Downloads (o nim_filesystem).\n"
         )
 
     def _ensure_conversation(self, client: ClientInfo) -> None:
