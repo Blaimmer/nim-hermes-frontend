@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIM PC — Propuesta Rediseño F6</title>
+<style>
+  :root{
+    --bg:#010912; --panel:#02101f; --panel2:#031627; --border:#0a2a45;
+    --cyan:#22d3ee; --cyan-dim:#0e7490; --text:#a5f3fc; --dim:#155e75;
+    --violet:#a78bfa; --emerald:#34d399; --amber:#fbbf24; --fuchsia:#e879f9;
+    --sky:#38bdf8; --orange:#fb923c; --red:#f87171;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  .topbar{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--panel)}
+  .logo{font-weight:900;letter-spacing:2px;font-size:14px;color:var(--cyan)}
+  .logo span{color:var(--dim)}
+  .badge{font-size:10px;padding:2px 8px;border-radius:99px;border:1px solid var(--border);color:var(--dim)}
+  .badge.live{color:var(--emerald);border-color:var(--emerald)}
+  .toggle{margin-left:auto;display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+  .toggle button{background:transparent;border:none;color:var(--dim);padding:5px 14px;font-family:inherit;font-size:11px;cursor:pointer}
+  .toggle button.active{background:var(--cyan);color:#010912;font-weight:700}
+  .layout{flex:1;display:flex;min-height:0}
+  /* ===== ANTES (actual) ===== */
+  .before{flex:1;display:flex;min-height:0}
+  .before .aside{width:180px;border-right:1px solid var(--border);background:var(--panel);padding:8px;display:flex;flex-direction:column;gap:4px}
+  .before .aside .grp{font-size:9px;color:var(--dim);letter-spacing:2px;margin-top:8px}
+  .before .aside button{display:flex;align-items:center;gap:8px;width:100%;background:transparent;border:1px solid transparent;color:var(--dim);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;text-align:left}
+  .before .aside button.on{background:rgba(34,211,238,.08);color:var(--cyan);border-color:var(--cyan);font-weight:700}
+  .before .main{flex:1;display:flex;flex-direction:column;gap:8px;padding:10px;overflow:auto;background:var(--bg)}
+  .before .chat{flex:1;border:1px solid var(--border);border-radius:8px;background:var(--panel);display:flex;flex-direction:column;min-height:160px}
+  .before .chat .h{font-size:10px;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);letter-spacing:1px}
+  .before .chat .body{flex:1;padding:10px;color:var(--dim);font-size:11px}
+  .before .stack{display:flex;flex-direction:column;gap:6px}
+  .before .stack .pane{border:1px solid var(--border);border-radius:8px;background:var(--panel);padding:8px 10px;font-size:10px;color:var(--dim)}
+  .before .stack .pane b{color:var(--text);font-size:11px}
+  .before .stack .pane .bar{height:5px;border-radius:3px;background:var(--panel2);margin-top:6px;overflow:hidden}
+  .before .stack .pane .bar i{display:block;height:100%;width:30%;border-radius:3px;background:var(--cyan-dim)}
+  .mess{font-size:10px;color:var(--dim);padding:0 14px 10px;text-align:center}
+  .mess b{color:var(--red)}
+  /* ===== DESPUÉS (propuesto) ===== */
+  .after{flex:1;display:flex;min-height:0;display:none}
+  .after .sidebar{width:210px;border-right:1px solid var(--border);background:var(--panel);padding:10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+  .after .sidebar .grp{font-size:9px;color:var(--dim);letter-spacing:2px;margin:10px 0 4px;padding-left:6px}
+  .after .sidebar .grp:first-child{margin-top:0}
+  .after .sidebar button{display:flex;align-items:center;gap:9px;width:100%;background:transparent;border:1px solid transparent;color:var(--dim);padding:7px 8px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;text-align:left;transition:all .12s}
+  .after .sidebar button:hover{color:var(--text);background:var(--panel2)}
+  .after .sidebar button.on{background:rgba(34,211,238,.08);color:var(--cyan);border-color:var(--cyan);font-weight:700}
+  .after .sidebar button .dot{width:7px;height:7px;border-radius:99px;flex-shrink:0}
+  .after .sidebar .foot{margin-top:auto;font-size:9px;color:var(--dim);padding:8px 6px;border-top:1px solid var(--border)}
+  .after .stage{flex:1;display:flex;flex-direction:column;min-width:0}
+  .after .stage .header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel)}
+  .after .stage .header .t{font-size:12px;font-weight:700;color:var(--text)}
+  .after .stage .header .t span{font-weight:400;color:var(--dim);font-size:10px;margin-left:8px}
+  .after .stage .body{flex:1;padding:14px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+  .card{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px}
+  .card .big{font-size:22px;margin-bottom:6px}
+  .card h3{font-size:12px;color:var(--text);margin-bottom:4px}
+  .card p{font-size:10px;color:var(--dim);line-height:1.6}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .ph{border:1px dashed var(--border);border-radius:8px;padding:10px;font-size:10px;color:var(--dim);text-align:center;display:flex;align-items:center;justify-content:center;min-height:70px}
+  .note{font-size:10px;color:var(--cyan-dim);border-left:2px solid var(--cyan);padding:4px 10px;background:rgba(34,211,238,.04)}
+  .chip{display:inline-block;font-size:9px;padding:2px 8px;border-radius:99px;border:1px solid var(--border);color:var(--dim);margin:2px}
+  @media (max-width:900px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">NIM<span>_PC</span></div>
+  <div class="badge live">● conectado · VPS 72.60.123.163</div>
+  <div class="badge">F6 · propuesta rediseño</div>
+  <div class="toggle">
+    <button id="btnBefore" class="active" onclick="show('before')">ANTES (actual)</button>
+    <button id="btnAfter" onclick="show('after')">DESPUÉS (propuesto)</button>
+  </div>
+</div>
+
+<!-- ============ ANTES: layout actual ============ -->
+<div id="view-before" class="layout">
+  <div class="before">
+    <div class="aside">
+      <div class="grp">CHAT</div>
+      <button class="on">💬 CHAT</button>
+      <div class="grp">PANELES</div>
+      <button>🔮 SESIONES</button>
+      <button>📁 ARCHIVOS</button>
+      <button>🌿 GIT</button>
+      <button>🖥️ TERMINAL</button>
+      <button>🧠 MEMORIA</button>
+      <button>🤖 AGY</button>
+    </div>
+    <div class="main">
+      <div class="chat">
+        <div class="h">CHAT · streaming</div>
+        <div class="body">mensajes... (el área de chat compite con los paneles)</div>
+      </div>
+      <div class="stack">
+        <div class="pane"><b>🔮 SESIONES</b><div class="bar"><i></i></div></div>
+        <div class="pane"><b>📁 ARCHIVOS</b><div class="bar"><i style="width:50%"></i></div></div>
+        <div class="pane"><b>🧠 MEMORIA</b><div class="bar"><i style="width:70%"></i></div></div>
+        <div class="pane"><b>🤖 AGY</b><div class="bar"><i style="width:20%"></i></div></div>
+      </div>
+      <div class="mess">⚠️ Paneles apilados en el aside: el chat se encoge, todo se <b>riega</b>, hay que hacer scroll para encontrar algo.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DESPUÉS: propuesta ============ -->
+<div id="view-after" class="layout">
+  <div class="after" id="afterWrap">
+    <div class="sidebar">
+      <div class="grp">PRINCIPAL</div>
+      <button data-p="chat" class="on" onclick="pick(this)"><span class="dot" style="background:var(--cyan)"></span>💬 CHAT</button>
+      <div class="grp">MI PC (local)</div>
+      <button data-p="term" onclick="pick(this)"><span class="dot" style="background:var(--fuchsia)"></span>🖥️ TERMINAL</button>
+      <button data-p="files" onclick="pick(this)"><span class="dot" style="background:var(--emerald)"></span>📁 ARCHIVOS</button>
+      <button data-p="git" onclick="pick(this)"><span class="dot" style="background:var(--amber)"></span>🌿 GIT</button>
+      <button data-p="agy" onclick="pick(this)"><span class="dot" style="background:var(--orange)"></span>🤖 AGY</button>
+      <div class="grp">VPS (servidor)</div>
+      <button data-p="sessions" onclick="pick(this)"><span class="dot" style="background:var(--violet)"></span>🔮 SESIONES</button>
+      <button data-p="mem" onclick="pick(this)"><span class="dot" style="background:var(--sky)"></span>🧠 MEMORIA</button>
+      <button data-p="mcp" onclick="pick(this)"><span class="dot" style="background:var(--cyan)"></span>🔌 MCP</button>
+      <div class="foot">11 tools activas · 4 servicios OK<br>chat omnicanal · Telegram + CLI + PC</div>
+    </div>
+    <div class="stage">
+      <div class="header"><div class="t" id="stageTitle">CHAT <span>vista principal — ocupa todo el espacio</span></div></div>
+      <div class="body" id="stageBody">
+        <div class="card">
+          <div class="big">💬</div>
+          <h3>Chat principal</h3>
+          <p>Ocupa el área completa. El streaming palabra a palabra, el orbe de estado y el TTS siguen igual — pero ya no compiten con paneles apilados encima.</p>
+        </div>
+        <div class="grid2">
+          <div class="card"><h3>¿Qué cambia?</h3><p>Los paneles dejan de ser cajas apiladas en el aside. Cada vista (chat, terminal, archivos…) se abre en el área principal a pantalla completa, con su propio encabezado. Un solo clic alterna, otro clic vuelve al chat.</p></div>
+          <div class="card"><h3>Agrupación por origen</h3><p>MI PC (tools locales vía WSS :9876) vs VPS (datos del servidor :9119). Sabes de un vistazo dónde se ejecuta cada cosa. La regla de oro del proyecto: acciones locales → PC, datos del servidor → VPS.</p></div>
+        </div>
+        <div class="card"><h3>Panel MCP nuevo</h3><p>Los 20 MCP del catálogo (linear, notion, figma, hugging_face, airtable…) con estado instalado/no instalado y botón de autorización OAuth — sin salir de la app.</p><div><span class="chip">linear</span><span class="chip">notion</span><span class="chip">figma</span><span class="chip">hugging_face</span><span class="chip">airtable</span><span class="chip">+15 más</span></div></div>
+        <div class="note">Este es un mockup de propuesta — el diseño final lo implementamos en el repo (F6) con tu visto bueno.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const PANELS = {
+    chat:   ['CHAT', '💬 Vista principal — el chat ocupa todo el espacio. Streaming, orbe, TTS.'],
+    term:   ['TERMINAL', '🖥️ PowerShell / CMD / Bash en pantalla completa. Ctrl+C real (pty pendiente F5).'],
+    files:  ['ARCHIVOS', '📁 Explorador de archivos de TU PC (C:\\, D:\\). Tree lazy, visor, ops.'],
+    git:    ['GIT', '🌿 Status, diff línea a línea, commit. Repos locales de tu PC.'],
+    agy:    ['AGY', '🤖 Antigravity CLI integrado — prompt + ejecución en tu PC.'],
+    sessions:['SESIONES', '🔮 300+ sesiones del VPS con búsqueda, archivar, renombrar, resume.'],
+    mem:    ['MEMORIA', '🧠 Star map real del harness + 550 skills del VPS.'],
+    mcp:    ['MCP', '🔌 20 servers del catálogo con instalación y OAuth desde la app.']
+  };
+  function show(v){
+    document.getElementById('view-before').style.display = v==='before'?'flex':'none';
+    document.getElementById('view-after').style.display  = v==='after'?'flex':'none';
+    document.getElementById('btnBefore').classList.toggle('active', v==='before');
+    document.getElementById('btnAfter').classList.toggle('active',  v==='after');
+  }
+  function pick(btn){
+    document.querySelectorAll('#afterWrap .sidebar button').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    const p = btn.dataset.p, info = PANELS[p];
+    document.getElementById('stageTitle').innerHTML = info[0] + ' <span>vista a pantalla completa</span>';
+    document.getElementById('stageBody').innerHTML =
+      '<div class="card"><div class="big">'+info[1].split(' ')[0]+'</div><h3>'+info[0]+'</h3><p>'+info[1]+'</p></div>' +
+      '<div class="grid2"><div class="card"><h3>Layout propuesto</h3><p>Sidebar agrupado por origen (MI PC / VPS) + panel activo en el área principal. Nada apilado, nada regado.</p></div>' +
+      '<div class="card"><h3>Sin perder lo que funciona</h3><p>Misma toolchain, mismos colores por panel, mismo bridge WSS. Solo cambia la organización visual.</p></div></div>';
+  }
+</script>
+</body>
+</html>
