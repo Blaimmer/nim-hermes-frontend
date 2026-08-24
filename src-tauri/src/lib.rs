@@ -1,42 +1,76 @@
 use serde_json::json;
 
-#[tauri::command]
-fn nim_terminal(command: String, cwd: Option<String>) -> Result<String, String> {
-    use std::process::Command;
-    
-    let mut cmd = if cfg!(target_os = "windows") {
-        let mut c = Command::new("cmd");
-        c.arg("/C").arg(command);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(command);
-        c
+// ── Helper: ejecutar un comando con timeout y kill ─────────────────────────
+// Los commands de Tauri que ejecutan procesos DEBEN pasar por aquí: corren en
+// spawn_blocking (no bloquean el hilo principal/UI) y matan el proceso si no
+// termina dentro del límite (evita que la app se congele/cuelgue con cmd /C
+// interactivo o procesos zombies). Patrón alineado con el harness de Hermes
+// Agent (tools/terminal_tool.py) que SIEMPRE ejecuta con timeout.
+fn run_cmd_with_timeout(
+    mut cmd: std::process::Command,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return Err(json!({"error": e.to_string()}).to_string()),
     };
 
-    if let Some(dir) = cwd {
-        cmd.current_dir(dir);
-    }
-
-    match cmd.output() {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            let exit_code = output.status.code().unwrap_or(-1);
-            
-            let result = json!({
-                "stdout": stdout,
-                "stderr": stderr,
-                "exit_code": exit_code
-            });
-            
-            Ok(result.to_string())
-        },
-        Err(e) => {
-            let err_json = json!({"error": e.to_string()});
-            Err(err_json.to_string())
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs.max(1));
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) => {
+                if Instant::now() > deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(json!({
+                        "error": format!("timeout: el comando no terminó en {}s", timeout_secs),
+                        "timed_out": true
+                    }).to_string());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(json!({"error": e.to_string()}).to_string()),
         }
+    };
+
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    if let Some(mut so) = child.stdout.take() {
+        let _ = so.read_to_string(&mut stdout);
     }
+    if let Some(mut se) = child.stderr.take() {
+        let _ = se.read_to_string(&mut stderr);
+    }
+    let exit_code = status.code().unwrap_or(-1);
+    Ok(json!({"stdout": stdout, "stderr": stderr, "exit_code": exit_code}).to_string())
+}
+
+#[tauri::command]
+async fn nim_terminal(command: String, cwd: Option<String>) -> Result<String, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = if cfg!(target_os = "windows") {
+            let mut c = std::process::Command::new("cmd");
+            c.arg("/C").arg(&command);
+            c
+        } else {
+            let mut c = std::process::Command::new("sh");
+            c.arg("-c").arg(&command);
+            c
+        };
+        if let Some(dir) = cwd {
+            if !dir.is_empty() {
+                cmd.current_dir(&dir);
+            }
+        }
+        run_cmd_with_timeout(cmd, 20)
+    });
+    result.await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -167,38 +201,37 @@ fn nim_file_ops(action: String, path: String, dest: Option<String>) -> Result<St
 // Ejecuta Python/Node en la PC con timeout. NO es un sandbox aislado de verdad;
 // para aislar de verdad se usaría el backend del harness (code_execution_tool).
 #[tauri::command]
-fn nim_code_exec(lang: String, code: String, timeout_secs: Option<u64>) -> Result<String, String> {
-    use std::io::Write;
-    use std::process::Command;
-    use std::time::Duration;
+async fn nim_code_exec(lang: String, code: String, timeout_secs: Option<u64>) -> Result<String, String> {
+    let timeout = timeout_secs.unwrap_or(30).min(60);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
 
-    let _timeout = timeout_secs.unwrap_or(30);
-    let tmp_dir = std::env::temp_dir();
-    let script_path = tmp_dir.join(format!("nim_exec_{}.{}", std::process::id(), if lang == "python" { "py" } else { "js" }));
+        let tmp_dir = std::env::temp_dir();
+        let script_path = tmp_dir.join(format!(
+            "nim_exec_{}_{}.{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+            if lang == "python" { "py" } else { "js" }
+        ));
 
-    let mut file = std::fs::File::create(&script_path).map_err(|e| json!({"error": e.to_string()}).to_string())?;
-    file.write_all(code.as_bytes()).map_err(|e| json!({"error": e.to_string()}).to_string())?;
-    drop(file);
-
-    let output = if lang == "python" {
-        Command::new("python").arg(&script_path).output()
-    } else {
-        Command::new("node").arg(&script_path).output()
-    };
-
-    let _ = std::fs::remove_file(&script_path);
-
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            let exit_code = out.status.code().unwrap_or(-1);
-            // timeout simulado: el command de proceso real espera, aquí simplemente reportamos
-            let _ = Duration::from_secs(0);
-            Ok(json!({"stdout": stdout, "stderr": stderr, "exit_code": exit_code, "timed_out": false}).to_string())
+        let write_result = std::fs::File::create(&script_path)
+            .and_then(|mut f| f.write_all(code.as_bytes()));
+        if let Err(e) = write_result {
+            return Err(json!({"error": e.to_string()}).to_string());
         }
-        Err(e) => Err(json!({"error": e.to_string()}).to_string()),
-    }
+
+        let mut cmd = if lang == "python" {
+            std::process::Command::new("python")
+        } else {
+            std::process::Command::new("node")
+        };
+        cmd.arg(&script_path);
+
+        let out = run_cmd_with_timeout(cmd, timeout);
+        let _ = std::fs::remove_file(&script_path);
+        out
+    });
+    result.await.map_err(|e| e.to_string())?
 }
 
 // ── NIM PC v2: checkpoints (F3) ───────────────────────────────────────────
@@ -262,9 +295,7 @@ fn copy_recursive(src: &str, dst: &str) -> Result<(), String> {
 //   type        → escribe texto con SendKeys
 //   move        → mueve el cursor a (x, y)
 #[tauri::command]
-fn nim_computer_use(action: String, x: Option<i32>, y: Option<i32>, text: Option<String>) -> Result<String, String> {
-    use std::process::Command;
-
+async fn nim_computer_use(action: String, x: Option<i32>, y: Option<i32>, text: Option<String>) -> Result<String, String> {
     let ps_script = match action.as_str() {
         "screenshot" => r#"
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
@@ -311,25 +342,15 @@ $bytes = [System.IO.File]::ReadAllBytes($path)
         _ => return Err(json!({"error": "Unknown action (screenshot|click|move|type)"}).to_string()),
     };
 
-    let output = if cfg!(target_os = "windows") {
-        Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-Command")
-            .arg(ps_script)
-            .output()
-    } else {
-        return Err(json!({"error": "computer_use solo Windows (por ahora)"}).to_string());
-    };
-
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            let exit_code = out.status.code().unwrap_or(-1);
-            Ok(json!({"stdout": stdout.trim(), "stderr": stderr.trim(), "exit_code": exit_code}).to_string())
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        if !cfg!(target_os = "windows") {
+            return Err(json!({"error": "computer_use solo Windows (por ahora)"}).to_string());
         }
-        Err(e) => Err(json!({"error": e.to_string()}).to_string()),
-    }
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.arg("-NoProfile").arg("-Command").arg(ps_script);
+        run_cmd_with_timeout(cmd, 30)
+    });
+    result.await.map_err(|e| e.to_string())?
 }
 
 // ── NIM PC v2: git review (F2.4) ──────────────────────────────────────────
@@ -391,36 +412,29 @@ fn nim_git_commit(cwd: String, message: String) -> Result<String, String> {
 // con instrucción de instalación. En Windows agy.exe debe estar en PATH.
 
 #[tauri::command]
-fn nim_antigravity(prompt: String, cwd: Option<String>, timeout_secs: Option<u64>) -> Result<String, String> {
-    use std::process::Command;
-    let mut cmd = Command::new(if cfg!(target_os = "windows") { "agy.exe" } else { "agy" });
-    cmd.arg("--print").arg(&prompt);
-    if let Some(dir) = cwd {
-        if !dir.is_empty() {
-            cmd.current_dir(&dir);
-        }
-    }
-    if let Some(t) = timeout_secs {
-        if t > 0 {
-            cmd.env("AGY_PRINT_TIMEOUT", t.to_string());
-        }
-    }
-    match cmd.output() {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            let exit_code = out.status.code().unwrap_or(-1);
-            Ok(json!({"stdout": stdout.trim(), "stderr": stderr.trim(), "exit_code": exit_code}).to_string())
-        }
-        Err(e) => {
-            // agy no encontrado (ErrorKind::NotFound) → instrucción clara.
-            if e.kind() == std::io::ErrorKind::NotFound {
-                Err(json!({"error": "agy no está en PATH. Instálalo con: agy install (o https://antigravity.dev). El panel Antigravity requiere la CLI en la PC."}).to_string())
-            } else {
-                Err(json!({"error": format!("Error al ejecutar agy: {}", e)}).to_string())
+async fn nim_antigravity(prompt: String, cwd: Option<String>, timeout_secs: Option<u64>) -> Result<String, String> {
+    let timeout = timeout_secs.unwrap_or(60).min(120);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new(if cfg!(target_os = "windows") { "agy.exe" } else { "agy" });
+        cmd.arg("--print").arg(&prompt);
+        if let Some(dir) = cwd {
+            if !dir.is_empty() {
+                cmd.current_dir(&dir);
             }
         }
-    }
+        match run_cmd_with_timeout(cmd, timeout) {
+            Ok(out) => Ok(out),
+            Err(e) => {
+                // agy no encontrado (spawn falla con os error 2 / No such file)
+                if e.contains("os error 2") || e.contains("No such file") || e.contains("not found") {
+                    Err(json!({"error": "agy no está en PATH. Instálalo con: agy install (o https://antigravity.dev). El panel Antigravity requiere la CLI en la PC."}).to_string())
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    });
+    result.await.map_err(|e| e.to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
