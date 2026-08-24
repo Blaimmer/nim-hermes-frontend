@@ -1278,6 +1278,7 @@ class NimWSSServer:
     # Catálogo de modelos conocidos (sincronizado con el dashboard)
     KNOWN_MODELS: list[dict[str, Any]] = [
         {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "provider": "deepseek"},
+        {"id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "provider": "deepseek"},
         {"id": "deepseek-v3", "name": "DeepSeek V3", "provider": "deepseek"},
         {"id": "deepseek-r1", "name": "DeepSeek R1", "provider": "deepseek"},
         {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "provider": "google"},
